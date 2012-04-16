@@ -11,6 +11,7 @@ type g1 =
 
 type input = 
   | G1 of g1
+  | M92 of g1
   | Other of string
 
 let string_of_token = function
@@ -46,16 +47,27 @@ let parse_gcode () =
 	| Some _ -> assert false
     in
     let g1 = List.mem (Lexer.Entry ('G', Lexer.Int 1)) accu in
+    let m92 = List.mem (Lexer.Entry ('M', Lexer.Int 92)) accu in
     let (x, y, z, e) = app4 f ('X', 'Y', 'Z', 'E') in
     let new_at = app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at)) in
+    let rest = 
+      lazy (
+	let r = List.filter (function Lexer.Entry (reg, _) when List.mem reg ['X'; 'Y'; 'Z'; 'G'; 'E'; 'M'] -> false | _ -> true) accu in
+	  String.concat "" **> List.rev_map string_of_token r
+      ) in
     let value =
       if g1 && (x <> None || y <> None || z <> None || e <> None)
       then 
-	let rest = List.filter (function Lexer.Entry (reg, _) when List.mem reg ['X'; 'Y'; 'Z'; 'G'; 'E'] -> false | _ -> true) accu in
-	let rest = String.concat "" **> List.rev_map string_of_token rest in
 	let (x, y, z, e) = new_at in
-	  (G1 { x; y; z; e; rest })
-      else Other (String.concat " " (List.rev_map string_of_token accu))
+	  (G1 { x; y; z; e; rest = Lazy.force rest })
+      else 
+	if m92
+	then (
+	  let (x, y, z, e) = new_at in
+	    M92 { x; y; z; e; rest = Lazy.force rest }
+	) 
+	else
+	Other (String.concat " " (List.rev_map string_of_token accu))
     in
       ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
       value
@@ -80,14 +92,18 @@ let parse_gcode () =
   in
     BatEnum.from (fun () -> loop [])
 
-let string_of_input = function
-  | G1 { x; y; z; e; rest } -> 
-      let f label x = 
-	BatOption.default "" **>
-	  BatOption.map ((^) (" " ^ label)) **>
-	  BatOption.map (Printf.sprintf "%.4f") x
-      in
-	"G1" ^ f "X" x ^ f "Y" y ^ f "Z" z ^ f "E" e ^ " " ^ rest
+let string_of_input = 
+  let coord_cmd label x y z e rest =
+    let f label x = 
+      BatOption.default "" **>
+	BatOption.map ((^) (" " ^ label)) **>
+	BatOption.map (Printf.sprintf "%.4f") x
+    in
+      label ^ f "X" x ^ f "Y" y ^ f "Z" z ^ f "E" e ^ " " ^ rest
+  in
+  function
+  | G1 { x; y; z; e; rest } -> coord_cmd "G1" x y z e rest
+  | M92 { x; y; z; e; rest } -> coord_cmd "M92" x y z e rest
   | Other str -> str
 
 let distance2 (x1, y1) (x2, y2) = sqrt ((x1 -. x2) ** 2.0 +. (y1 -. y2) ** 2.0)
@@ -136,6 +152,8 @@ let interpolate threshold data =
 	     e = coalesce2 g1_2.e g1_0.e;
  	     z = coalesce2 g1_2.z g1_0.z;
 	     rest = "" })
+      | Some ((M92 g) as code) ->
+	  ([code], g)
   in
     BatEnum.concat (
       BatEnum.from_loop 
