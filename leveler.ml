@@ -55,7 +55,7 @@ let parse_gcode () =
 	let rest = String.concat "" **> List.rev_map string_of_token rest in
 	let (x, y, z, e) = new_at in
 	  (G1 { x; y; z; e; rest })
-      else Other (String.concat "" (List.rev_map string_of_token accu))
+      else Other (String.concat " " (List.rev_map string_of_token accu))
     in
       ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
       value
