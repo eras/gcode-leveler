@@ -225,7 +225,7 @@ let main () =
 	       ("-step", Arg.Set_float step_size, "Set traveled distance that is interpolated");
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
 	       ("-y", Arg.Set_int y_dim, "Set area Y size");
-	      ] (fun arg -> Printf.printf "Invalid argument: %s\n%!" arg) "G-code leveler";
+	      ] (fun arg -> Printf.ksprintf failwith "Invalid argument: %s\n%!" arg) "G-code leveler";
     let bump_height = !bump_height in
     let x_dim = float !x_dim in
     let y_dim = float !y_dim in
