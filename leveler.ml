@@ -55,21 +55,25 @@ let parse_gcode () =
 	let r = List.filter (function Lexer.Entry (reg, _) when List.mem reg ['X'; 'Y'; 'Z'; 'G'; 'E'; 'M'] -> false | _ -> true) accu in
 	  String.concat "" **> List.rev_map string_of_token r
       ) in
+    let update_positions () =
+      ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
+    in
     let value =
       if g1 && (x <> None || y <> None || z <> None || e <> None)
       then 
 	let (x, y, z, e) = new_at in
+	  update_positions ();
 	  (G1 { x; y; z; e; rest = Lazy.force rest })
       else 
 	if m92
 	then (
 	  let (x, y, z, e) = new_at in
+	    update_positions ();
 	    M92 { x; y; z; e; rest = Lazy.force rest }
 	) 
 	else
 	Other (String.concat " " (List.rev_map string_of_token accu))
     in
-      ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
       value
   in
   let rec loop accu =
