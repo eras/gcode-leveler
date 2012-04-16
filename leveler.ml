@@ -163,7 +163,7 @@ let map_z f code =
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
   (x -. x_min) /. (x_max -. x_min) *. (y_max -. y_min) +. y_min
 
-let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~zy_delta (x, y, z) =
+let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~zy_delta ~offset (x, y, z) =
   let x_bump = bump 2.0 x_dim x in
   let y_bump = bump 2.0 y_dim y in
     z 
@@ -172,6 +172,7 @@ let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~
     *. (bump y_attach_factor y_dim y)
     +. interpolate1 (0.0, x_dim) (-. zx_delta /. 2.0, zx_delta /. 2.0) x
     +. interpolate1 (0.0, y_dim) (-. zy_delta /. 2.0, zy_delta /. 2.0) y
+    +. offset
 
 let main () =
   (* let input = BatStd.input_chars Pervasives.stdin in *)
@@ -180,9 +181,13 @@ let main () =
   let zy_delta = ref 0.0 in
   let x_dim = ref 160 in
   let y_dim = ref 199 in
+  let offset = ref 0.0 in
+  let step_size = ref 50.0 in
     Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
 	       ("-xd", Arg.Set_float zx_delta, "Set height difference from the beginning to end of X axis");
-	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y ayis");
+	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y axis");
+	       ("-ofs", Arg.Set_float offset, "Set offset");
+	       ("-step", Arg.Set_float step_size, "Set traveled distance that is interpolated");
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
 	       ("-y", Arg.Set_int y_dim, "Set area Y size");
 	      ] (fun arg -> Printf.printf "Invalid argument: %s\n%!" arg) "G-code leveler";
@@ -191,9 +196,11 @@ let main () =
     let y_dim = float !y_dim in
     let zx_delta = !zx_delta in
     let zy_delta = !zy_delta in
+    let offset = !offset in
+    let step_size = !step_size in
     let data = parse_gcode () in
-    let data = BatEnum.map (map_z (map ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) data in
-    let data = interpolate 1.0 data in
+    let data = BatEnum.map (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) data in
+    let data = interpolate step_size data in
     let data = BatEnum.map string_of_input data in
       BatEnum.iter print_string data
 
