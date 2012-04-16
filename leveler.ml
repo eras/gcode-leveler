@@ -196,6 +196,18 @@ let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~
     +. interpolate1 (0.0, y_dim) (-. zy_delta /. 2.0, zy_delta /. 2.0) y
     +. offset
 
+type env = {
+  step_size : float;
+  mapping   : input -> input;
+}
+
+let transform { step_size; mapping } =
+  let data = parse_gcode () in
+  let data = BatEnum.map mapping data in
+  let data = interpolate step_size data in
+  let data = BatEnum.map string_of_input data in
+    BatEnum.iter print_string data
+
 let main () =
   (* let input = BatStd.input_chars Pervasives.stdin in *)
   let bump_height = ref 0.0 in
@@ -205,6 +217,7 @@ let main () =
   let y_dim = ref 199 in
   let offset = ref 0.0 in
   let step_size = ref 50.0 in
+  let mode = ref transform in
     Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
 	       ("-xd", Arg.Set_float zx_delta, "Set height difference from the beginning to end of X axis");
 	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y axis");
@@ -219,11 +232,8 @@ let main () =
     let zx_delta = !zx_delta in
     let zy_delta = !zy_delta in
     let offset = !offset in
+    let mapping = (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) in
     let step_size = !step_size in
-    let data = parse_gcode () in
-    let data = BatEnum.map (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) data in
-    let data = interpolate step_size data in
-    let data = BatEnum.map string_of_input data in
-      BatEnum.iter print_string data
+      !mode { step_size; mapping }
 
 let _ = main ()
