@@ -16,7 +16,7 @@ type input =
 let string_of_token = function
   | Lexer.Eof -> ""
   | Lexer.Entry (register, Lexer.Int value) -> Printf.sprintf "%c%d" register value
-  | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%f" register value
+  | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%.4f" register value
   | Lexer.Comment str -> " ; " ^ str
   | Lexer.Eol -> "\n"
 
@@ -85,7 +85,7 @@ let string_of_input = function
       let f label x = 
 	BatOption.default "" **>
 	  BatOption.map ((^) (" " ^ label)) **>
-	  BatOption.map string_of_float x
+	  BatOption.map (Printf.sprintf "%.4f") x
       in
 	"G1" ^ f "X" x ^ f "Y" y ^ f "Z" z ^ f "E" e ^ " " ^ rest
   | Other str -> str
