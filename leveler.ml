@@ -1,0 +1,189 @@
+open BatPervasives
+
+module Lnoexn = BatList.Exceptionless
+
+type g1 =
+    { x : float option;
+      y : float option;
+      z : float option;
+      e : float option;
+      rest : string; }
+
+type input = 
+  | G1 of g1
+  | Other of string
+
+let string_of_token = function
+  | Lexer.Eof -> ""
+  | Lexer.Entry (register, Lexer.Int value) -> Printf.sprintf "%c%d" register value
+  | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%f" register value
+  | Lexer.Comment str -> " ; " ^ str
+  | Lexer.Eol -> "\n"
+
+let coalesce2 a b =
+  match a with
+    | None -> b
+    | Some _ -> a
+
+let app4 f (x, y, z, e) = (f x, f y, f z, f e)
+
+let zip4 (a1, a2, a3, a4) (b1, b2, b3, b4) = ((a1, b1), (a2, b2), (a3, b3), (a4, b4))
+
+let parse_gcode () =
+  let lex_input = Lexing.from_channel Pervasives.stdin in
+  let next = ref None in
+  let rec eof () =
+    next := Some eof;
+    raise BatEnum.No_more_elements;
+  in
+  let prev_at = (ref None, ref None, ref None, ref None) in
+  let process accu =
+    let f x = 
+      match Lnoexn.find (function Lexer.Entry (reg, _) when reg = x -> true | _ -> false) accu with
+	| None -> None
+	| Some (Lexer.Entry (_, Lexer.Float value)) -> Some value
+	| Some (Lexer.Entry (_, Lexer.Int value)) -> Some (float_of_int value)
+	| Some _ -> assert false
+    in
+    let g1 = List.mem (Lexer.Entry ('G', Lexer.Int 1)) accu in
+    let (x, y, z, e) = app4 f ('X', 'Y', 'Z', 'E') in
+    let new_at = app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at)) in
+    let value =
+      if g1 && (x <> None || y <> None || z <> None || e <> None)
+      then 
+	let rest = List.filter (function Lexer.Entry (reg, _) when List.mem reg ['X'; 'Y'; 'Z'; 'G'; 'E'] -> false | _ -> true) accu in
+	let rest = String.concat "" **> List.rev_map string_of_token rest in
+	let (x, y, z, e) = new_at in
+	  (G1 { x; y; z; e; rest })
+      else Other (String.concat "" (List.rev_map string_of_token accu))
+    in
+      ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
+      value
+  in
+  let rec loop accu =
+    match !next with
+      | Some fn ->
+	  next := None;
+	  fn ()
+      | None ->
+	  match Lexer.token lex_input with
+	    | Lexer.Eof -> 
+		next := Some eof;
+		process accu
+	    | Lexer.Entry _ as entry ->
+		loop (entry::accu)
+	    | Lexer.Comment _ as token ->
+		next := Some (fun () -> Other (string_of_token token));
+		process accu
+	    | Lexer.Eol ->
+		process (Lexer.Eol::accu)
+  in
+    BatEnum.from (fun () -> loop [])
+
+let string_of_input = function
+  | G1 { x; y; z; e; rest } -> 
+      let f label x = 
+	BatOption.default "" **>
+	  BatOption.map ((^) (" " ^ label)) **>
+	  BatOption.map string_of_float x
+      in
+	"G1" ^ f "X" x ^ f "Y" y ^ f "Z" z ^ f "E" e ^ " " ^ rest
+  | Other str -> str
+
+let distance2 (x1, y1) (x2, y2) = sqrt ((x1 -. x2) ** 2.0 +. (y1 -. y2) ** 2.0)
+
+let distance2_opt a b =
+  match a, b with
+    | (Some x1, Some y1), (Some x2, Some y2) -> Some (distance2 (x1, y1) (x2, y2))
+    | (Some x1, None), (Some x2, None) -> Some (abs_float (x2 -. x1))
+    | (None, Some y1), (None, Some y2) -> Some (abs_float (y2 -. y1))
+    | _ -> None
+
+let midway a b = (a +. b) /. 2.0
+
+let midway_opt a b = 
+  match a, b with
+    | Some a, Some b -> Some (midway a b)
+    | _ -> None
+
+let midway_g1 a b =
+  let x = midway_opt a.x b.x in
+  let y = midway_opt a.y b.y in
+  let z = midway_opt a.z b.z in
+  let e = midway_opt a.e b.e in
+    { x; y; z; e; rest = b.rest }
+
+let rec interpolate_pair threshold g1_0 g1_2 =
+  if BatOption.default false (BatOption.map ((<) threshold) (distance2_opt (g1_0.x, g1_0.y) (g1_2.x, g1_2.y))) 
+  then 
+    let g1_1 = midway_g1 g1_0 g1_2 in
+    let g1_2 = { g1_2 with rest = "\n" } in
+      interpolate_pair threshold g1_0 g1_1 @ interpolate_pair threshold g1_1 g1_2
+  else (
+    [g1_2]
+  )
+
+let interpolate threshold data =
+  let rec coords_of g1_0 current =
+    match current with
+      | None -> raise BatEnum.No_more_elements
+      | Some ((Other _) as code) ->
+	  ([code], g1_0)
+      | Some ((G1 g1_2)) ->
+	  (List.map (fun x -> G1 x) (interpolate_pair threshold g1_0 g1_2),
+	   { x = coalesce2 g1_2.x g1_0.x;
+	     y = coalesce2 g1_2.y g1_0.y;
+	     e = coalesce2 g1_2.e g1_0.e;
+ 	     z = coalesce2 g1_2.z g1_0.z;
+	     rest = "" })
+  in
+    BatEnum.concat (
+      BatEnum.from_loop 
+	{ x = None; y = None; z = None; e = None; rest = "" }
+	(fun prev ->
+	   let (list, prev') = coords_of prev (BatEnum.get data) in
+	     (BatList.enum list, prev')
+	)
+    )
+
+let bump power dim x = (-. 1.0) /. (dim /. 2.0) ** power *. abs_float (x -. dim /. 2.0) ** power +. 1.0
+
+let project_x f (x, _y, _z) = f x
+
+let project_y f (_x, y, _z) = f y
+
+let project_z f (_x, _y, z) = f z
+
+let map_z f code =
+    match code with
+      | G1 ({ x = Some x; y = Some y; z = Some z } as g1) ->
+	  G1 { g1 with z = Some (f (x, y, z)) }
+      | _ -> code
+
+let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor (x, y, z) =
+  let x_bump = bump 2.0 x_dim x in
+  let y_bump = bump 2.0 y_dim y in
+    z 
+    +. (bump_height *. (midway x_bump y_bump)) 
+    *. (bump x_attach_factor x_dim x)
+    *. (bump y_attach_factor y_dim y)
+
+let main () =
+  (* let input = BatStd.input_chars Pervasives.stdin in *)
+  let bump_height = ref 0.0 in
+  let x_dim = ref 160 in
+  let y_dim = ref 199 in
+    Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
+	       ("-x", Arg.Set_int x_dim, "Set area X size");
+	       ("-y", Arg.Set_int y_dim, "Set area Y size");
+	      ] (fun arg -> Printf.printf "Invalid argument: %s " arg) "G-code leveler";
+    let bump_height = !bump_height in
+    let x_dim = float !x_dim in
+    let y_dim = float !y_dim in
+    let data = parse_gcode () in
+    let data = BatEnum.map (map_z (map ~x_dim ~y_dim ~bump_height ~x_attach_factor:2.0 ~y_attach_factor:20.0)) data in
+    let data = interpolate 10.0 data in
+    let data = BatEnum.map string_of_input data in
+      BatEnum.iter print_string data
+
+let _ = main ()
