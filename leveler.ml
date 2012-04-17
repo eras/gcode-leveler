@@ -190,8 +190,8 @@ let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~
   let y_bump = bump 2.0 y_dim y in
     z 
     +. (bump_height *. (midway x_bump y_bump)) 
-    *. (bump x_attach_factor x_dim x)
-    *. (bump y_attach_factor y_dim y)
+    *. (bump x_attach_factor (x_dim +. 2.0) (x +. 1.0))
+    *. (bump y_attach_factor (y_dim +. 2.0) (y +. 1.0))
     +. interpolate1 (0.0, x_dim) (-. zx_delta /. 2.0, zx_delta /. 2.0) x
     +. interpolate1 (0.0, y_dim) (-. zy_delta /. 2.0, zy_delta /. 2.0) y
     +. offset
