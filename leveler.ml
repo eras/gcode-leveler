@@ -11,7 +11,7 @@ type g1 =
 
 type input = 
   | G1 of g1
-  | M92 of g1
+  | G92 of g1
   | Other of string
 
 let string_of_token = function
@@ -47,7 +47,7 @@ let parse_gcode () =
 	| Some _ -> assert false
     in
     let g1 = List.mem (Lexer.Entry ('G', Lexer.Int 1)) accu in
-    let m92 = List.mem (Lexer.Entry ('M', Lexer.Int 92)) accu in
+    let g92 = List.mem (Lexer.Entry ('G', Lexer.Int 92)) accu in
     let (x, y, z, e) = app4 f ('X', 'Y', 'Z', 'E') in
     let new_at = app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at)) in
     let rest = 
@@ -65,11 +65,10 @@ let parse_gcode () =
 	  update_positions ();
 	  (G1 { x; y; z; e; rest = Lazy.force rest })
       else 
-	if m92
+	if g92
 	then (
-	  let (x, y, z, e) = new_at in
-	    update_positions ();
-	    M92 { x; y; z; e; rest = Lazy.force rest }
+	  update_positions ();
+	  G92 { x; y; z; e; rest = Lazy.force rest }
 	) 
 	else
 	Other (String.concat " " (List.rev_map string_of_token accu))
@@ -107,7 +106,7 @@ let string_of_input =
   in
   function
   | G1 { x; y; z; e; rest } -> coord_cmd "G1" x y z e rest
-  | M92 { x; y; z; e; rest } -> coord_cmd "M92" x y z e rest
+  | G92 { x; y; z; e; rest } -> coord_cmd "G92" x y z e rest
   | Other str -> str
 
 let distance2 (x1, y1) (x2, y2) = sqrt ((x1 -. x2) ** 2.0 +. (y1 -. y2) ** 2.0)
@@ -156,7 +155,7 @@ let interpolate threshold data =
 	     e = coalesce2 g1_2.e g1_0.e;
  	     z = coalesce2 g1_2.z g1_0.z;
 	     rest = "" })
-      | Some ((M92 g) as code) ->
+      | Some ((G92 g) as code) ->
 	  ([code], g)
   in
     BatEnum.concat (
