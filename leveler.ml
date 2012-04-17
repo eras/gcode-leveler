@@ -208,6 +208,7 @@ let transform { step_size; mapping } =
   let data = BatEnum.map mapping data in
   let data = interpolate step_size data in
   let data = BatEnum.map string_of_input data in
+    Printf.printf "; Mangled with gcode-leveler https://github.com/eras/gcode-leveler\n";
     BatEnum.iter print_string data
 
 let show_table { x_dim; y_dim; mapping } =
