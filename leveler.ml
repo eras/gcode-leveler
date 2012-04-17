@@ -199,6 +199,8 @@ let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~
 type env = {
   step_size : float;
   mapping   : input -> input;
+  x_dim	    : float;
+  y_dim	    : float;
 }
 
 let transform { step_size; mapping } =
@@ -234,6 +236,6 @@ let main () =
     let offset = !offset in
     let mapping = (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) in
     let step_size = !step_size in
-      !mode { step_size; mapping }
+      !mode { step_size; mapping; x_dim; y_dim }
 
 let _ = main ()
