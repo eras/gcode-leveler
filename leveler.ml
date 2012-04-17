@@ -210,6 +210,17 @@ let transform { step_size; mapping } =
   let data = BatEnum.map string_of_input data in
     BatEnum.iter print_string data
 
+let show_table { x_dim; y_dim; mapping } =
+  (y_dim, ~-.10.0) --. 1.0 |> BatEnum.iter **> fun y ->
+    begin 
+      (1.0, 10.0) --. x_dim |> BatEnum.iter **> fun x ->
+	match mapping (G1 { x = Some x; y = Some y; z = Some 0.0; e = None; rest = "" }) with
+	  | G1 { z = Some z } ->
+	      Printf.printf " %.3f" z
+	  | _ -> assert false
+    end;
+    Printf.printf "\n"
+
 let main () =
   (* let input = BatStd.input_chars Pervasives.stdin in *)
   let bump_height = ref 0.0 in
@@ -220,6 +231,7 @@ let main () =
   let offset = ref 0.0 in
   let step_size = ref 50.0 in
   let mode = ref transform in
+  let set_mode mode' = Arg.Unit (fun () -> mode := mode') in
     Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
 	       ("-xd", Arg.Set_float zx_delta, "Set height difference from the beginning to end of X axis");
 	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y axis");
@@ -227,6 +239,7 @@ let main () =
 	       ("-step", Arg.Set_float step_size, "Set traveled distance that is interpolated");
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
 	       ("-y", Arg.Set_int y_dim, "Set area Y size");
+	       ("-table", set_mode show_table, "Show table of transformation at scale 1/10")
 	      ] (fun arg -> Printf.ksprintf failwith "Invalid argument: %s\n%!" arg) "G-code leveler";
     let bump_height = !bump_height in
     let x_dim = float !x_dim in
