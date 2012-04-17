@@ -231,10 +231,14 @@ let main () =
   let offset = ref 0.0 in
   let step_size = ref 50.0 in
   let mode = ref transform in
+  let x_attach_factor = ref 2.0 in
+  let y_attach_factor = ref 20.0 in
   let set_mode mode' = Arg.Unit (fun () -> mode := mode') in
     Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
 	       ("-xd", Arg.Set_float zx_delta, "Set height difference from the beginning to end of X axis");
 	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y axis");
+	       ("-xa", Arg.Set_float x_attach_factor, "Set height difference from the beginning to end of X axis");
+	       ("-ya", Arg.Set_float y_attach_factor, "Set height difference from the beginning to end of Y axis");
 	       ("-ofs", Arg.Set_float offset, "Set offset");
 	       ("-step", Arg.Set_float step_size, "Set traveled distance that is interpolated");
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
@@ -247,7 +251,9 @@ let main () =
     let zx_delta = !zx_delta in
     let zy_delta = !zy_delta in
     let offset = !offset in
-    let mapping = (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor:2.0 ~y_attach_factor:20.0)) in
+    let x_attach_factor = !x_attach_factor in
+    let y_attach_factor = !y_attach_factor in
+    let mapping = (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor ~y_attach_factor)) in
     let step_size = !step_size in
       !mode { step_size; mapping; x_dim; y_dim }
 
