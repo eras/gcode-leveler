@@ -18,7 +18,7 @@ let string_of_token = function
   | Lexer.Eof -> ""
   | Lexer.Entry (register, Lexer.Int value) -> Printf.sprintf "%c%d" register value
   | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%.4f" register value
-  | Lexer.Comment str -> " ; " ^ str
+  | Lexer.Comment str -> str
   | Lexer.Eol -> "\n"
 
 let coalesce2 a b =
