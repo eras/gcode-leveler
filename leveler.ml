@@ -95,14 +95,21 @@ let parse_gcode () =
   in
     BatEnum.from (fun () -> loop [])
 
-let string_of_input = 
+let string_of_input ?(previous) = 
+  let (x', y', z', e') = 
+    match previous with
+      | Some (G1 { x; y; z; e; rest }) -> (x, y, z, e)
+      | Some (G92 { x; y; z; e; rest }) -> (x, y, z, e)
+      | Some (Other _) | None -> (None, None, None, None)
+  in
   let coord_cmd label x y z e rest =
-    let f label x = 
-      BatOption.default "" **>
-	BatOption.map ((^) (" " ^ label)) **>
-	BatOption.map (Printf.sprintf "%.4f") x
+    let f label x x' = 
+      match x', x with
+	| _, None -> ""
+	| Some x', Some x when x = x' -> ""
+	| _, Some x -> Printf.sprintf " %s%.4f" label x
     in
-      label ^ f "X" x ^ f "Y" y ^ f "Z" z ^ f "E" e ^ " " ^ rest
+      label ^ f "X" x x' ^ f "Y" y y' ^ f "Z" z z' ^ f "E" e e' ^ " " ^ rest
   in
   function
   | G1 { x; y; z; e; rest } -> coord_cmd "G1" x y z e rest
@@ -206,7 +213,21 @@ let transform { step_size; mapping } =
   let data = parse_gcode () in
   let data = BatEnum.map mapping data in
   let data = interpolate step_size data in
-  let data = BatEnum.map string_of_input data in
+  let data = 
+    BatEnum.unfold 
+      None
+      (fun prev ->
+	   match BatEnum.get data with
+	     | None -> None
+	     | Some x -> 
+		 let prev' =
+		   match x with
+		     | G1 _ | G92 _ -> Some x
+		     | Other _ -> prev
+		 in
+		   Some (string_of_input ?previous:prev x, prev')
+      )
+  in
     Printf.printf "; Mangled with gcode-leveler https://github.com/eras/gcode-leveler\n";
     BatEnum.iter print_string data
 
