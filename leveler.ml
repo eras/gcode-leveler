@@ -9,9 +9,13 @@ type g1 =
       e : float option;
       rest : string; }
 
+type rest = string
+
 type input = 
-  | G1 of g1
-  | G92 of g1
+  | G1 of g1			     (* go to point *)
+  | G90abs of rest		     (* switch to absolute movement *)
+  | G91rel of rest		     (* switch to relative movement *)
+  | G92 of g1			     (* set values *)
   | Other of string
 
 let string_of_token = function
@@ -47,6 +51,8 @@ let parse_gcode () =
 	| Some _ -> assert false
     in
     let g1 = List.mem (Lexer.Entry ('G', Lexer.Int 1)) accu in
+    let g90 = List.mem (Lexer.Entry ('G', Lexer.Int 90)) accu in
+    let g91 = List.mem (Lexer.Entry ('G', Lexer.Int 91)) accu in
     let g92 = List.mem (Lexer.Entry ('G', Lexer.Int 92)) accu in
     let (x, y, z, e) = app4 f ('X', 'Y', 'Z', 'E') in
     let new_at = app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at)) in
@@ -59,19 +65,19 @@ let parse_gcode () =
       ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
     in
     let value =
-      if g1 && (x <> None || y <> None || z <> None || e <> None)
-      then 
-	let (x, y, z, e) = new_at in
-	  update_positions ();
-	  (G1 { x; y; z; e; rest = Lazy.force rest })
-      else 
-	if g92
-	then (
-	  update_positions ();
-	  G92 { x; y; z; e; rest = Lazy.force rest }
-	) 
-	else
-	Other (String.concat " " (List.rev_map string_of_token accu))
+      match 0 with
+	| _ when g90 -> G90abs (Lazy.force rest)
+	| _ when g91 -> G91rel (Lazy.force rest)
+	| _ when g1 ->
+	    let (x, y, z, e) = new_at in
+	      update_positions ();
+	      (G1 { x; y; z; e; rest = Lazy.force rest })
+	| _ when g92 ->
+	    let (x, y, z, e) = new_at in
+	      update_positions ();
+	      G92 { x; y; z; e; rest = Lazy.force rest }
+	| _ -> 
+	    Other (String.concat " " (List.rev_map string_of_token accu))
     in
       value
   in
@@ -95,25 +101,33 @@ let parse_gcode () =
   in
     BatEnum.from (fun () -> loop [])
 
-let string_of_input ?(previous) = 
+let string_of_input ?(mode=`Absolute) ?(previous) = 
   let (x', y', z', e') = 
     match previous with
       | Some (G1 { x; y; z; e; rest }) -> (x, y, z, e)
       | Some (G92 { x; y; z; e; rest }) -> (x, y, z, e)
-      | Some (Other _) | None -> (None, None, None, None)
+      | Some (G90abs _ | G91rel _ | Other _) | None -> (None, None, None, None)
   in
   let coord_cmd label x y z e rest =
     let f label x x' = 
-      match x', x with
-	| _, None -> ""
-	| Some x', Some x when x = x' -> ""
-	| _, Some x -> Printf.sprintf " %s%.4f" label x
+      match mode with
+	| `Absolute ->
+	    ( match x', x with
+		| _, None -> ""
+		| Some x', Some x when x = x' -> ""
+		| _, Some x -> Printf.sprintf " %s%.4f" label x )
+	| `Relative ->
+	    match x with
+	      | Some x when x <> 0.0 -> Printf.sprintf " %s%.4f" label x
+	      | None | Some _ -> ""
     in
       label ^ f "X" x x' ^ f "Y" y y' ^ f "Z" z z' ^ f "E" e e' ^ " " ^ rest
   in
   function
   | G1 { x; y; z; e; rest } -> coord_cmd "G1" x y z e rest
   | G92 { x; y; z; e; rest } -> coord_cmd "G92" x y z e rest
+  | G90abs rest -> "G90 " ^ rest
+  | G91rel rest -> "G91 " ^ rest
   | Other str -> str
 
 let distance2 (x1, y1) (x2, y2) = sqrt ((x1 -. x2) ** 2.0 +. (y1 -. y2) ** 2.0)
@@ -139,38 +153,73 @@ let midway_g1 a b =
   let e = midway_opt a.e b.e in
     { x; y; z; e; rest = b.rest }
 
-let rec interpolate_pair threshold g1_0 g1_2 =
+let rec interpolate_absolute threshold g1_0 g1_2 =
   if BatOption.default false (BatOption.map ((<) threshold) (distance2_opt (g1_0.x, g1_0.y) (g1_2.x, g1_2.y))) 
   then 
     let g1_1 = midway_g1 g1_0 g1_2 in
     let g1_2 = { g1_2 with rest = "\n" } in
-      interpolate_pair threshold g1_0 g1_1 @ interpolate_pair threshold g1_1 g1_2
+      interpolate_absolute threshold g1_0 g1_1 @ interpolate_absolute threshold g1_1 g1_2
   else (
     [g1_2]
   )
 
+let rec interpolate_relative threshold g1_1 =
+  let origo = { x = Some 0.0; y = Some 0.0; z = Some 0.0; e = Some 0.0; rest = "\n" } in
+    if BatOption.default false (BatOption.map ((<) threshold) (distance2_opt (origo.x, origo.y) (g1_1.x, g1_1.y)))
+    then
+      let g1_0 = midway_g1 origo g1_1 in
+      let g1_1 = { g1_0 with rest = "\n" } in
+	interpolate_relative threshold g1_0 @ interpolate_relative threshold g1_1
+    else (
+      [g1_1]
+    )
+      
+let g1_origo = { x = Some 0.0; y = Some 0.0; z = Some 0.0; e = Some 0.0; rest = "\n" }
+
 let interpolate threshold data =
-  let rec coords_of g1_0 current =
+  let rec coords_of (mode, g1_0) current =
     match current with
       | None -> raise BatEnum.No_more_elements
       | Some ((Other _) as code) ->
-	  ([code], g1_0)
+	  ([code], (mode, g1_0))
       | Some ((G1 g1_2)) ->
-	  (List.map (fun x -> G1 x) (interpolate_pair threshold g1_0 g1_2),
-	   { x = coalesce2 g1_2.x g1_0.x;
-	     y = coalesce2 g1_2.y g1_0.y;
-	     e = coalesce2 g1_2.e g1_0.e;
- 	     z = coalesce2 g1_2.z g1_0.z;
-	     rest = "" })
-      | Some ((G92 g) as code) ->
-	  ([code], g)
+	  let map_ofs = match mode with
+	    | `Absolute -> coalesce2
+	    | `Relative ->
+		fun old new' ->
+		  match old, new' with
+		    | _, None -> None
+		    | None, Some x -> Some x
+		    | Some old, Some new' -> Some (new' +. old)
+	  in
+	  (List.map (fun x -> G1 x) 
+	     (match mode with
+		| `Absolute ->
+		    interpolate_absolute
+		      threshold 
+		      g1_0
+		      g1_2
+		| `Relative ->
+		    interpolate_relative
+		      threshold
+		      g1_2
+	     ),
+	   (mode,
+	    { x = map_ofs g1_2.x g1_0.x;
+	      y = map_ofs g1_2.y g1_0.y;
+	      e = map_ofs g1_2.e g1_0.e;
+ 	      z = map_ofs g1_2.z g1_0.z;
+	      rest = "" }))
+      | Some ((G90abs g) as code) -> ([code], (`Absolute, g1_0))
+      | Some ((G91rel g) as code) -> ([code], (`Relative, g1_0))
+      | Some ((G92 g) as code) -> ([code], (mode, g))
   in
     BatEnum.concat (
       BatEnum.from_loop 
-	{ x = None; y = None; z = None; e = None; rest = "" }
-	(fun prev ->
-	   let (list, prev') = coords_of prev (BatEnum.get data) in
-	     (BatList.enum list, prev')
+	(`Absolute, { x = None; y = None; z = None; e = None; rest = "" })
+	(fun (mode, prev) ->
+	   let (list, (mode', prev')) = coords_of (mode, prev) (BatEnum.get data) in
+	     (BatList.enum list, (mode', prev'))
 	)
     )
 
@@ -215,17 +264,19 @@ let transform { step_size; mapping } =
   let data = interpolate step_size data in
   let data = 
     BatEnum.unfold 
-      None
-      (fun prev ->
+      (`Absolute, None)
+      (fun (mode, prev) ->
 	   match BatEnum.get data with
 	     | None -> None
 	     | Some x -> 
-		 let prev' =
+		 let mode', prev' =
 		   match x with
-		     | G1 _ | G92 _ -> Some x
-		     | Other _ -> prev
+		     | G1 _ | G92 _ -> mode, Some x
+		     | G90abs _ -> `Absolute, prev
+		     | G91rel _ -> `Relative, prev
+		     | Other _ -> mode, prev
 		 in
-		   Some (string_of_input ?previous:prev x, prev')
+		   Some (string_of_input ~mode ?previous:prev x, (mode', prev'))
       )
   in
     Printf.printf "; Mangled with gcode-leveler https://github.com/eras/gcode-leveler\n";
