@@ -13,7 +13,7 @@
 }
 
 rule token = parse
-  | (['a'-'z' 'A' - 'Z'] as reg) (['0'-'9' '.']* as value)
+  | (['a'-'z' 'A' - 'Z'] as reg) (['0'-'9' '.' '-']* as value)
       { Entry (reg, 
 	       if Pcre.pmatch ~pat:"\\." value
 	       then Float (float_of_string value)
