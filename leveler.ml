@@ -41,9 +41,10 @@ let parse_gcode () =
     next := Some eof;
     raise BatEnum.No_more_elements;
   in
+  let mode = ref `Absolute in
   let prev_at = (ref None, ref None, ref None, ref None) in
   let process accu =
-    let f x = 
+    let get_float x = 
       match Lnoexn.find (function Lexer.Entry (reg, _) when reg = x -> true | _ -> false) accu with
 	| None -> None
 	| Some (Lexer.Entry (_, Lexer.Float value)) -> Some value
@@ -54,20 +55,39 @@ let parse_gcode () =
     let g90 = List.mem (Lexer.Entry ('G', Lexer.Int 90)) accu in
     let g91 = List.mem (Lexer.Entry ('G', Lexer.Int 91)) accu in
     let g92 = List.mem (Lexer.Entry ('G', Lexer.Int 92)) accu in
-    let (x, y, z, e) = app4 f ('X', 'Y', 'Z', 'E') in
-    let new_at = app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at)) in
+    let (x, y, z, e) = app4 get_float ('X', 'Y', 'Z', 'E') in
     let rest = 
       lazy (
 	let r = List.filter (function Lexer.Entry (reg, _) when List.mem reg ['X'; 'Y'; 'Z'; 'G'; 'E'; 'M'] -> false | _ -> true) accu in
 	  String.concat "" **> List.rev_map string_of_token r
       ) in
-    let update_positions () =
-      ignore (app4 (uncurry (:=)) (zip4 prev_at new_at));
+    let default_zero at = app4 (BatOption.default 0.0) at in
+    let new_at = 
+      match !mode with
+	| `Absolute -> app4 (uncurry coalesce2) (zip4 (x, y, z, e) (app4 (!) prev_at))
+	| `Relative -> 
+	    app4 
+	      (fun x -> Some x)
+	      (default_zero (x, y, z, e))
+    in
+    let update_positions () = 
+      ignore (app4 (uncurry (:=)) 
+		(zip4 prev_at
+		   (match !mode with
+		      | `Absolute ->  new_at
+		      | `Relative -> app4 (fun x -> Some x) (app4 (uncurry (+.)) (zip4 (default_zero new_at) (default_zero (app4 (!) prev_at))))
+		   )
+		)
+	     )
     in
     let value =
       match 0 with
-	| _ when g90 -> G90abs (Lazy.force rest)
-	| _ when g91 -> G91rel (Lazy.force rest)
+	| _ when g90 -> 
+	    mode := `Absolute;
+	    G90abs (Lazy.force rest)
+	| _ when g91 ->
+	    mode := `Relative;
+	    G91rel (Lazy.force rest)
 	| _ when g1 ->
 	    let (x, y, z, e) = new_at in
 	      update_positions ();
@@ -103,10 +123,12 @@ let parse_gcode () =
 
 let string_of_input ?(mode=`Absolute) ?(previous) = 
   let (x', y', z', e') = 
-    match previous with
-      | Some (G1 { x; y; z; e; rest }) -> (x, y, z, e)
-      | Some (G92 { x; y; z; e; rest }) -> (x, y, z, e)
-      | Some (G90abs _ | G91rel _ | Other _) | None -> (None, None, None, None)
+    match mode, previous with
+      | `Absolute, Some (G1 { x; y; z; e; rest }) -> (x, y, z, e)
+      | `Absolute, Some (G92 { x; y; z; e; rest }) -> (x, y, z, e)
+      | (`Absolute | `Relative), Some (G90abs _ | G91rel _ | Other _) 
+      | (`Absolute | `Relative), None
+      | `Relative, _ -> (None, None, None, None)
   in
   let coord_cmd label x y z e rest =
     let f label x x' = 
