@@ -265,12 +265,15 @@ let interpolate1 (x_min, x_max) (y_min, y_max) x =
   (x -. x_min) /. (x_max -. x_min) *. (y_max -. y_min) +. y_min
 
 let map_by_d ~offset ~points (x, y, z) =
-  let ds = Array.map (fun (x', y', z') -> 1.0 /. distance2 (x', y') (x, y) ** 2.0) points in
-    try let (_, _, z) = points.(BatArray.findi (fun d ->  classify_float d = FP_infinite) ds) in z
-    with Not_found ->
-      let ds'sum = Array.fold_left (+.) 0.0 ds in
-      let ws = BatArray.map2 (fun d (_, _, z) -> d *. z) ds points in
-	Array.fold_left (+.) 0.0 ws /. ds'sum +. z +. offset
+  if Array.length points = 0 
+  then z +. offset 
+  else
+    let ds = Array.map (fun (x', y', z') -> 1.0 /. distance2 (x', y') (x, y) ** 2.0) points in
+      try let (_, _, z) = points.(BatArray.findi (fun d ->  classify_float d = FP_infinite) ds) in z
+      with Not_found ->
+	let ds'sum = Array.fold_left (+.) 0.0 ds in
+	let ws = BatArray.map2 (fun d (_, _, z) -> d *. z) ds points in
+	  Array.fold_left (+.) 0.0 ws /. ds'sum +. z +. offset
 
 type env = {
   step_size : float;
