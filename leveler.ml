@@ -30,6 +30,8 @@ let coalesce2 a b =
     | None -> b
     | Some _ -> a
 
+let app3 f (x, y, z) = (f x, f y, f z)
+
 let app4 f (x, y, z, e) = (f x, f y, f z, f e)
 
 let zip4 (a1, a2, a3, a4) (b1, b2, b3, b4) = ((a1, b1), (a2, b2), (a3, b3), (a4, b4))
@@ -262,16 +264,13 @@ let map_z f code =
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
   (x -. x_min) /. (x_max -. x_min) *. (y_max -. y_min) +. y_min
 
-let map ~x_dim ~y_dim ~bump_height ~x_attach_factor ~y_attach_factor ~zx_delta ~zy_delta ~offset (x, y, z) =
-  let x_bump = bump 2.0 x_dim x in
-  let y_bump = bump 2.0 y_dim y in
-    z 
-    +. (bump_height *. (midway x_bump y_bump)) 
-    *. (bump x_attach_factor (x_dim +. 2.0) (x +. 1.0))
-    *. (bump y_attach_factor (y_dim +. 2.0) (y +. 1.0))
-    +. interpolate1 (0.0, x_dim) (-. zx_delta /. 2.0, zx_delta /. 2.0) x
-    +. interpolate1 (0.0, y_dim) (-. zy_delta /. 2.0, zy_delta /. 2.0) y
-    +. offset
+let map_by_d ~offset ~points (x, y, z) =
+  let ds = Array.map (fun (x', y', z') -> 1.0 /. distance2 (x', y') (x, y) ** 2.0) points in
+    try let (_, _, z) = points.(BatArray.findi (fun d ->  classify_float d = FP_infinite) ds) in z
+    with Not_found ->
+      let ds'sum = Array.fold_left (+.) 0.0 ds in
+      let ws = BatArray.map2 (fun d (_, _, z) -> d *. z) ds points in
+	Array.fold_left (+.) 0.0 ws /. ds'sum +. z +. offset
 
 type env = {
   step_size : float;
@@ -310,43 +309,38 @@ let show_table { x_dim; y_dim; mapping } =
       (1.0, 10.0) --. x_dim |> BatEnum.iter **> fun x ->
 	match mapping (G1 { x = Some x; y = Some y; z = Some 0.0; e = None; rest = "" }) with
 	  | G1 { z = Some z } ->
-	      Printf.printf " %.3f" z
+	      Printf.printf " % .03f" z
 	  | _ -> assert false
     end;
     Printf.printf "\n"
 
 let main () =
   let mode = ref transform in
-  let bump_height = ref 0.0 in
-  let zx_delta = ref 0.0 in
-  let zy_delta = ref 0.0 in
+  let points = ref [] in
+  let offset = ref 0.0 in
   let x_dim = ref 160 in
   let y_dim = ref 199 in
-  let offset = ref 0.0 in
   let step_size = ref 50.0 in
-  let x_attach_factor = ref 2.0 in
-  let y_attach_factor = ref 20.0 in
   let set_mode mode' = Arg.Unit (fun () -> mode := mode') in
-    Arg.parse [("-b", Arg.Set_float bump_height, "Set bump height at the center");
-	       ("-xd", Arg.Set_float zx_delta, "Set height difference from the beginning to end of X axis");
-	       ("-yd", Arg.Set_float zy_delta, "Set height difference from the beginning to end of Y axis");
-	       ("-xa", Arg.Set_float x_attach_factor, "Set height difference from the beginning to end of X axis");
-	       ("-ya", Arg.Set_float y_attach_factor, "Set height difference from the beginning to end of Y axis");
-	       ("-ofs", Arg.Set_float offset, "Set offset");
+  let add_point str = 
+    match Pcre.split ~pat:"," str with
+      | [x'str; y'str; z'str] ->
+	  let xyz = app3 float_of_string (x'str, y'str, z'str) in
+	    points := xyz::!points
+      | _ ->
+	  Printf.eprintf "Invalid number of coordinates for -p. Expected x,y,z\n"
+  in
+    Arg.parse [("-p", Arg.String add_point, "Add point x,y,z to the offset map");
+	       ("-ofs", Arg.Set_float offset, "Set additional offset");
 	       ("-step", Arg.Set_float step_size, "Set traveled distance that is interpolated");
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
 	       ("-y", Arg.Set_int y_dim, "Set area Y size");
-	       ("-table", set_mode show_table, "Show table of transformation at scale 1/10")
+	       ("-table", set_mode show_table, "Show table of transformation at scale 1/10");
 	      ] (fun arg -> Printf.ksprintf failwith "Invalid argument: %s\n%!" arg) "G-code leveler";
-    let bump_height = !bump_height in
-    let x_dim = float !x_dim in
-    let y_dim = float !y_dim in
-    let zx_delta = !zx_delta in
-    let zy_delta = !zy_delta in
     let offset = !offset in
-    let x_attach_factor = !x_attach_factor in
-    let y_attach_factor = !y_attach_factor in
-    let mapping = (map_z (map ~offset ~x_dim ~y_dim ~bump_height ~zx_delta ~zy_delta ~x_attach_factor ~y_attach_factor)) in
+    let points = Array.of_list !points in
+    let mapping = (map_z (map_by_d ~offset ~points)) in
+    let x_dim, y_dim = float !x_dim, float !y_dim in
     let step_size = !step_size in
       !mode { step_size; mapping; x_dim; y_dim }
 
