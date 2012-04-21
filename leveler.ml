@@ -316,7 +316,7 @@ let show_table { x_dim; y_dim; mapping } =
     Printf.printf "\n"
 
 let main () =
-  (* let input = BatStd.input_chars Pervasives.stdin in *)
+  let mode = ref transform in
   let bump_height = ref 0.0 in
   let zx_delta = ref 0.0 in
   let zy_delta = ref 0.0 in
@@ -324,7 +324,6 @@ let main () =
   let y_dim = ref 199 in
   let offset = ref 0.0 in
   let step_size = ref 50.0 in
-  let mode = ref transform in
   let x_attach_factor = ref 2.0 in
   let y_attach_factor = ref 20.0 in
   let set_mode mode' = Arg.Unit (fun () -> mode := mode') in
