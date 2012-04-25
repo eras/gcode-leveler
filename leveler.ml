@@ -259,7 +259,10 @@ let map_z f code =
     match code with
       | G1 ({ x = Some x; y = Some y; z = Some z } as g1) ->
 	  G1 { g1 with z = Some (f (x, y, z)) }
-      | _ -> code
+      | G92 ({ x = Some x; y = Some y; z = Some z } as g1) ->
+	  G92 { g1 with z = Some (f (x, y, z)) }
+      | G1 _ | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
+      | G90abs _ | G91rel _ | Other _ -> code
 
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
   (x -. x_min) /. (x_max -. x_min) *. (y_max -. y_min) +. y_min
