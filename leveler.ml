@@ -123,6 +123,8 @@ let parse_gcode () =
   in
     BatEnum.from (fun () -> loop [])
 
+let string_of_gfloat f = Printf.sprintf "%.4f" f
+
 let string_of_input ?(mode=`Absolute) ?(previous) = 
   let (x', y', z', e') = 
     match mode, previous with
@@ -138,11 +140,11 @@ let string_of_input ?(mode=`Absolute) ?(previous) =
 	| `Absolute ->
 	    ( match x', x with
 		| _, None -> ""
-		| Some x', Some x when x = x' -> ""
-		| _, Some x -> Printf.sprintf " %s%.4f" label x )
+		| Some x', Some x when string_of_gfloat x = string_of_gfloat x' -> ""
+		| _, Some x -> Printf.sprintf " %s%s" label (string_of_gfloat x) )
 	| `Relative ->
 	    match x with
-	      | Some x when x <> 0.0 -> Printf.sprintf " %s%.4f" label x
+	      | Some x when string_of_gfloat x <> string_of_gfloat 0.0 -> Printf.sprintf " %s%s" label (string_of_gfloat x)
 	      | None | Some _ -> ""
     in
       label ^ f "X" x x' ^ f "Y" y y' ^ f "Z" z z' ^ f "E" e e' ^ " " ^ rest
