@@ -267,7 +267,7 @@ let interpolate1 (x_min, x_max) (y_min, y_max) x =
 let map_by_d ~offset ~points (x, y, z) =
   let adjust =
     if Array.length points = 0 
-    then z +. offset 
+    then 0.0
     else
       let ds = Array.map (fun (x', y', z') -> 1.0 /. distance2 (x', y') (x, y) ** 2.0) points in
 	try let (_, _, z) = points.(BatArray.findi (fun d ->  classify_float d = FP_infinite) ds) in z
