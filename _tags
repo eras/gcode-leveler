@@ -1,1 +1,3 @@
 <*>: package(pcre), package(batteries), dtypes, debug
+
+<scan.*>: package(camlimages.all_formats), package(sdl), package(sdl.sdlgfx)
