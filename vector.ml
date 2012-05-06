@@ -129,3 +129,86 @@ let scale_vector scale (x, y) =
 let length (x, y) =
   sqrt ( x *. x +. y *. y );;
 
+let sign = function
+  | n when n < 0 -> -1
+  | n -> 1
+
+(* lazy, got the formulas from http://local.wasp.uwa.edu.au/~pbourke/geometry/lineline2d/ *)
+let intersect_u ((x1, y1), (x2, y2)) ((x3, y3), (x4, y4)) =
+  let dem = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1)) in
+    if dem = 0 then
+      None
+    else
+      let u'a = float ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) /. float dem in
+      let u'b = float ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) /. float dem in
+	Some ((u'a, lazy ((x1 + int_of_float (u'a *. float (x2 - x1))),
+			  (y1 + int_of_float (u'a *. float (y2 - y1))))), 
+	      (u'b, lazy ((x3 + int_of_float (u'b *. float (x4 - x3))),
+			  (y3 + int_of_float (u'b *. float (y4 - y3))))))
+
+let intersect_u_float ((x1, y1), (x2, y2)) ((x3, y3), (x4, y4)) =
+  let dem = ((y4 -. y3) *. (x2 -. x1) -. (x4 -. x3) *. (y2 -. y1)) in
+    if dem = 0.0 then
+      None
+    else
+      let u'a = ((x4 -. x3) *. (y1 -. y3) -. (y4 -. y3) *. (x1 -. x3)) /. dem in
+      let u'b = ((x2 -. x1) *. (y1 -. y3) -. (y2 -. y1) *. (x1 -. x3)) /. dem in
+	Some ((u'a, lazy ((x1 +. (u'a *. (x2 -. x1))),
+			  (y1 +. (u'a *. (y2 -. y1))))),
+	      (u'b, lazy ((x3 +. (u'b *. (x4 -. x3))),
+			  (y3 +. (u'b *. (y4 -. y3))))))
+
+let intersect_line a b =
+  match intersect_u a b with
+    | None -> None
+    | Some ((u'a, p), (u'b, _)) 
+	when u'a >= 0.0 && u'a <= 1.0 && u'b >= 0.0 && u'b <= 1.0 ->
+	Some (Lazy.force p)
+    | _ -> None
+
+(* the line a is considered of being infinitely long *)
+let intersect_line_any a b =
+  match intersect_u a b with
+    | None -> None
+    | Some ((u'a, p), (u'b, _)) 
+	when u'b >= 0.0 && u'b <= 1.0 ->
+	Some (Lazy.force p)
+    | _ -> None
+
+(* lazy, got the formulas from http://local.wasp.uwa.edu.au/~pbourke/geometry/lineline2d/ *)
+let intersect_line_float ((x1, y1), (x2, y2)) ((x3, y3), (x4, y4)) =
+  let dem = ((y4 -. y3) *. (x2 -. x1) -. (x4 -. x3) *. (y2 -. y1)) in
+    if dem = 0.0 then
+      None
+    else
+      let u'a = ((x4 -. x3) *. (y1 -. y3) -. (y4 -. y3) *. (x1 -. x3)) /. dem in
+      let u'b = ((x2 -. x1) *. (y1 -. y3) -. (y2 -. y1) *. (x1 -. x3)) /. dem in
+	if u'a >= 0.0 && u'a <= 1.0 && u'b >= 0.0 && u'b <= 1.0 then
+	  Some ((x1 +. u'a *. (x2 -. x1)),
+		(y1 +. u'a *. (y2 -. y1)))
+	else
+	  None
+
+(* returns intersecting points in the order of intersection *)
+let intersect_region_with intersector ((x1, y1), (x2, y2)) ((p, _) as line) =
+  let d2 (x1, y1) = 
+    let (x2, y2) = p in
+      (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)
+  in
+  List.sort 
+    (fun p1 p2 -> compare (d2 p1) (d2 p2))
+    (List.concat (
+       (List.map (fun border -> 
+		    match intersector border line with
+		      | None -> []
+		      | Some x -> [x])
+	  [(x1, y1), (x1, y2 - 1);
+	   (x1, y2 - 1), (x2 - 1, y2 - 1); 
+	   (x2 - 1, y2 - 1), (x2 - 1, y1);
+	   (x2 - 1, y1), (x1, y1)])
+     )
+    )
+
+let intersect_region = intersect_region_with intersect_line
+
+let intersect_borders = intersect_region_with intersect_line_any
