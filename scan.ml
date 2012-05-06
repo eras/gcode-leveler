@@ -11,6 +11,8 @@ type vector = (float * float)
 
 let vector ((x : float), (y : float)) = (x, y)
 
+let pi = atan 1.0 *. 4.0
+
 let x_of_vec ((x, y) : vector) = x
 
 let y_of_vec ((x, y) : vector) = y
