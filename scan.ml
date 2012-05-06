@@ -215,6 +215,36 @@ let map_pairs (f : 'a -> 'a -> 'b) (xxs : 'a list list) : 'b list =
 let pairwise (xs : 'a list list) : ('a * 'a) list =
   map_pairs (fun a b -> (a, b)) xs
 
+let line_to_bounds ((x1, y1), (x2, y2)) x =
+  let bounds = [((x1, y1), (x1, y2));
+		((x1, y2), (x2, y2));
+		((x2, y2), (x2, y1));
+		((x2, y1), (x1, y1))] in
+  let open Vector in
+  let intersects = BatList.filter_map (intersect_u_float x) bounds in
+  let ahead, behind = List.partition (fun (dem, _) -> dem >= 0.0) (List.map fst intersects) in
+  let sort neg = BatList.sort ~cmp:(fun (a, _) (b, _) -> if neg then compare b a else compare a b) in
+  let ahead, behind = sort false ahead, sort true behind in
+    match behind, ahead with
+      | a::_, b::_ -> (Lazy.force (snd a), Lazy.force (snd b))
+      | _ -> assert false
+
+let line_of_angle_offset (w, h) angle offset =
+  let (w, h) = (float w, float h) in
+  let base_x, base_y = cos angle, sin angle in
+  let offset_v = Vector.(rot90 (base_x, base_y) *|. offset) in
+    line_to_bounds ((0.0, 0.0), (w, h)) 
+      Vector.((w /. 2.0, h /. 2.0) +| offset_v,
+	      (w /. 2.0 +. base_x, h /. 2.0 +. base_y) +| offset_v)
+
+let angle_offset_of_line (w, h) (a, b) =
+  let origo = Vector.((float w, float h) /|. 2.0) in
+  let (dx, dy) = Vector.(b -| a) in
+  let base = Vector.rot90 (Vector.unit (dx, dy)) in
+  let angle = atan2 dy dx in
+  let offset = Vector.dot2 base (a -| origo) in
+    (angle, offset)
+
 let main () =
   let filename = Sys.argv.(1) in
   let rgb24 = rgb24_of_file filename in
