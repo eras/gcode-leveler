@@ -42,6 +42,8 @@ let neg_vector (a, b) = (-.a, -.b)
 
 let mul_vector_float (a, b) x = (a *. x, b *. x)
 
+let mul_vector (x1, y1) (x2, y2) = (x1 *. x2, y1 *. y2)
+
 let mul_float_vector x (a, b) = (x *. a, x *. b)
 
 let div_vector_float (a, b) x = (a /. x, b /. x)
@@ -50,6 +52,7 @@ module Ops = struct
   let ( +| ) = add_vector
   let ( -| ) = sub_vector
   let ( ~| ) = neg_vector
+  let ( *| ) = mul_vector
   let ( *|. ) = mul_vector_float
   let ( *.| ) = mul_float_vector 
   let ( /|. ) = div_vector_float 
