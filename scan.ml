@@ -93,11 +93,15 @@ let get image (x, y) = image (int_of_float (x +. 0.5), int_of_float (y +. 0.5))
 
 let sum xs = Array.fold_left (+.) 0.0 xs 
 
+let sum_list xs = List.fold_left (+.) 0.0 xs 
+
 let minimum xs = Array.fold_left min infinity xs
 
 let maximum xs = Array.fold_left max neg_infinity xs
 
 let average xs = sum xs /. float (Array.length xs) 
+
+let average_list xs = sum_list xs /. float (List.length xs) 
 
 let convolution_1d_cyclic kernel xs = 
   let result = Array.make (Array.length xs) 0.0 in
@@ -108,6 +112,31 @@ let convolution_1d_cyclic kernel xs =
       done
     done;
     result
+
+let box_filter size = (size, Array.make (size * size) (1.0 /. float (size * size)))
+
+let convolution_2d (kernel_size, kernel) (w, h) image =
+  assert (kernel_size mod 2 = 1);
+  let dst = Array.make (w * h) 0.0 in
+    for x = 0 to w - 1 do
+      for y = 0 to h - 1 do
+	let s = ref 0.0 in
+	  for xc = -kernel_size / 2 to kernel_size / 2 do
+	    for yc = -kernel_size / 2 to kernel_size / 2 do
+	      let x' = x + xc in
+	      let y' = y + yc in
+	      let v = if x' >= 0 && x' < w && y' >= 0 && y < h then image (x', y') else 0.0 in
+	      let k = kernel.((xc + kernel_size / 2) + (yc + kernel_size / 2) * kernel_size) in
+		s := !s +. v *. k
+	    done
+	  done;
+	  dst.(y * w + x) <- !s
+      done
+    done;
+    fun (x, y) ->
+      if x >= 0 && y >= 0 && x < w && y < h
+      then dst.(y * w + x)
+      else 0.0
 
 let pixels_along_vector image ((_, n) as span) = 
   let pxs = Array.make n 0.0 in
@@ -179,6 +208,29 @@ let surface_of_rgb24 rgb24 =
       Sdlvideo.unlock s;
       s
 
+let surface_of_fn (w, h) fn =
+  let module A1 = Bigarray.Array1 in
+  let s = Sdlvideo.create_RGB_surface [] ~w ~h ~rmask:0xff0000l ~gmask:0x00ff00l ~bmask:0x0000ffl ~amask:0l ~bpp:24 in
+    Sdlvideo.lock s;
+    let pixels = Sdlvideo.pixel_data s in
+    let pitch = Sdlvideo.((surface_info s).pitch) in
+      for y = 0 to h - 1 do
+	for x = 0 to w - 1 do
+	  let (r, g, b) = fn (x, y) in
+	  let ofs = (x * 3 + y * pitch) in
+	    A1.set pixels (ofs + 2) r;
+	    A1.set pixels (ofs + 1) g;
+	    A1.set pixels (ofs + 0) b;
+	done;
+      done;
+      Sdlvideo.unlock s;
+      s
+
+let surface_of_gray_fn (w, h) fn =
+  surface_of_fn (w, h) (fun (x, y) -> 
+			  let c = int_of_float ((max 0.0 (min 1.0 (fn (x, h - y - 1)))) *. 255.0) in
+			    (c, c, c))
+
 let rec wait_exit () =
   match Sdlevent.wait_event () with
     | Sdlevent.QUIT -> ()
@@ -229,7 +281,7 @@ let line_to_bounds ((x1, y1), (x2, y2)) x =
       | a::_, b::_ -> (Lazy.force (snd a), Lazy.force (snd b))
       | _ -> assert false
 
-let line_of_angle_offset (w, h) angle offset =
+let line_of_angle_offset (w, h) (angle, offset) =
   let (w, h) = (float w, float h) in
   let base_x, base_y = cos angle, sin angle in
   let offset_v = Vector.(rot90 (base_x, base_y) *|. offset) in
@@ -242,14 +294,66 @@ let angle_offset_of_line (w, h) (a, b) =
   let (dx, dy) = Vector.(b -| a) in
   let base = Vector.rot90 (Vector.unit (dx, dy)) in
   let angle = atan2 dy dx in
-  let offset = Vector.dot2 base (a -| origo) in
+  let offset = Vector.dot2 base Vector.(a -| origo) in
     (angle, offset)
+
+let avg_of_line image (w, h) (angle, offset) =
+  let line = line_of_angle_offset (w, h) (angle, offset) in
+  let span = (line, ab_length line) in
+  let pxs = pixels_along_vector image span in
+  let avg = average pxs in
+    avg
+
+let angle_offset_cost image (w, h) (angle, offset) =
+  let open BatEnum in
+  let get_avg ofs = avg_of_line image (w, h) (angle, offset +. ofs) in
+  let rec scan_offset n =
+    if n < 10 then
+      let ofs = float n *. 2.0 in
+      let avg1 = get_avg ofs in
+      let avg2 = get_avg (~-. ofs) in
+      let value = avg1 *. avg2 in
+	if value < 0.2
+	then 0.0
+	else value +. scan_offset (n + 1)
+    else
+      0.0
+  in
+  let avg0 = get_avg 0.0 in
+    avg0 *. avg0 +. scan_offset 1
+
+let optimize_angle_offset image dims (angle, offset) =
+  let cost x =
+    let c = angle_offset_cost image dims x in
+      (* Printf.printf "%f %f -> %f\n" (fst x) (snd x) c; *)
+      c
+  in
+  let step step ((angle, offset) as x) = 
+    let g = 
+      Optimize.gradient2 ~epsilon:(10.0 /. 180.0 *. pi, 4.0)
+	(fun x -> cost (x, offset))
+	(fun x -> cost (angle, x))
+    in
+    (* let step = Vector.(g x *| (0.05, 5.0)) in *)
+    let step = Vector.(g x *| (0.25, 100.0) *|. 3.0 /|. (float step +. 10.0)) in
+      Printf.printf "Stepping %f %f\n" (fst step) (snd step);
+      Vector.(x +| step)
+  in
+    Optimize.optimize ~max_steps:100 ~epsilon:0.00000001 (angle, offset) cost step
+
+let timing label f a0 =
+  let t0 = Unix.times () in
+  let v = f a0 in
+  let t1 = Unix.times () in
+    Printf.printf "%s %f\n%!" label Unix.(t1.tms_utime -. t0.tms_utime);
+    v
 
 let main () =
   let filename = Sys.argv.(1) in
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
+  let image_smooth = convolution_2d (box_filter 9) image_dims image in
   let edges = edge_vectors image_dims in
   let points =
     flip List.map edges **> fun ab ->
@@ -265,10 +369,11 @@ let main () =
 	List.map (nth_step span) maximas
   in
   let surface = Sdlvideo.set_video_mode ~w:(fst image_dims) ~h:(snd image_dims) ~bpp:24 [] in
-  let image_surface = surface_of_rgb24 rgb24 in
+  let image_surface = surface_of_gray_fn image_dims image_smooth in
   let points_flat = List.concat points in 
   let point_pairs = pairwise points in
   let map_to_surface (x, y) = (int_of_float x, h - int_of_float y - 1) in
+  (* let point_pairs = [List.nth point_pairs 10] in *)
   let point_pairs_good =
     List.filter
       (fun ab ->
@@ -282,6 +387,16 @@ let main () =
       )
       point_pairs
   in
+  (* let point_pairs_good = *)
+  (*   point_pairs_good |> *)
+  (* 	List.map *)
+  (* 	(fun ab -> *)
+  (* 	   let pxs = pixels_along_vector image (ab, ab_length ab) in *)
+  (* 	     (average pxs, ab) *)
+  (* 	) |> List.sort compare |> List.map snd *)
+  (* in *)
+  (* let point_pairs_good = BatList.take 4 point_pairs_good in *)
+  let angle_offsets = List.map (angle_offset_of_line image_dims) point_pairs_good in
     Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
     List.iter 
       (fun at ->
@@ -289,17 +404,34 @@ let main () =
 	   ignore (Sdlgfx.filledCircleRGBA surface (Sdlvideo.rect x y 0 0) 10 (0xff, 0xff, 0xff) 0xff)
       )
       points_flat;
-    List.iter 
-      (fun (a, b) ->
-	 let (x1, y1) = map_to_surface a in
-	 let (x2, y2) = map_to_surface b in
-	   ignore (Sdlgfx.lineRGBA surface
-		     (Sdlvideo.rect x1 y1 0 0)
-		     (Sdlvideo.rect x2 y2 0 0)
-		     (0xff, 0xff, 0xff) 0xff)
-      )
-      point_pairs_good;
-    Sdlvideo.update_rect surface;
-    wait_exit () 
+    Printf.printf "Optimizing\n%!";
+    let optimized =
+      timing "optimize angles"
+	(List.map
+	   (fun ao ->
+	      let ao' = timing "optimize_angle" (optimize_angle_offset image_smooth image_dims) ao in
+		Printf.printf "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
+		ao'
+	   ))
+	angle_offsets
+    in
+      Printf.printf "Done optimizing\n%!";
+      List.iter2
+	(fun (a, b) ao ->
+	   let line (a, b) color =
+	     let (x1, y1) = map_to_surface a in
+	     let (x2, y2) = map_to_surface b in
+	       ignore (Sdlgfx.lineRGBA surface
+			 (Sdlvideo.rect x1 y1 0 0)
+			 (Sdlvideo.rect x2 y2 0 0)
+			 color 0xff)
+	   in
+	   let (a'o, b'o) = line_of_angle_offset image_dims ao in
+	     (* line (a, b) (0xff, 0xff, 0xff); *)
+	     line (a'o, b'o) (0x80, 0xff, 0x80);
+	)
+	point_pairs_good optimized;
+      Sdlvideo.update_rect surface;
+      wait_exit () 
 
 let _ = main ()
