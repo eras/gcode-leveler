@@ -99,6 +99,16 @@ let minimum xs = Array.fold_left min infinity xs
 
 let maximum xs = Array.fold_left max neg_infinity xs
 
+let part n xs =
+  let xs' = 
+    let x = Array.copy xs in
+      Array.sort compare x;
+      x
+  in
+  let len = Array.length xs in
+  let n' = min (len - 1) (int_of_float (float len *. n)) in
+    xs'.(n')
+
 let average xs = sum xs /. float (Array.length xs) 
 
 let average_list xs = sum_list xs /. float (List.length xs) 
@@ -335,9 +345,16 @@ let optimize_angle_offset image dims (angle, offset) =
 	(fun x -> cost (angle, x))
     in
     (* let step = Vector.(g x *| (0.05, 5.0)) in *)
-    let step = Vector.(g x *| (0.25, 100.0) *|. 3.0 /|. (float step +. 10.0)) in
-      Printf.printf "Stepping %f %f\n" (fst step) (snd step);
-      Vector.(x +| step)
+    (* let step = Vector.(g x *| (0.25, 100.0) *|. 3.0 /|. (float step +. 10.0)) in *)
+    let step = Vector.(g x *| (0.25, 50.0)) in
+    let step' = 
+      let len = Vector.length step in
+	if len > 0.1 
+	then Vector.(unit step *|. 0.1)
+	else step
+    in
+      Printf.printf "Stepping %f %f\n" (fst step') (snd step');
+      Vector.(x +| step')
   in
     Optimize.optimize ~max_steps:100 ~epsilon:0.00000001 (angle, offset) cost step
 
@@ -382,8 +399,10 @@ let main () =
 	 let avg = average pxs in
 	 let min = minimum pxs in
 	 let max = maximum pxs in
-	   Printf.printf "%f %f %f\n%!" avg min max;
-	   avg > 0.4 && min > 0.3
+	 let threshold =  0.9 *. average [|pxs.(0); pxs.(Array.length pxs - 1)|] in
+	   Printf.printf "%f %f %f\n%!" threshold min max;
+	   (* avg > 0.4 && min > 0.3 *)
+	   avg > threshold
       )
       point_pairs
   in
