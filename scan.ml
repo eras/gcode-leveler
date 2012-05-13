@@ -194,8 +194,11 @@ let convolution_2d (kernel_size, kernel) (w, h) image =
 
 let clamp x'min x'max x = min x'max (max x'min x)
 
+let array_of_image (w, h) image = 
+  Array.init (w * h) (fun c -> image (c mod w, c / w))
+
 let clamp_image lower higher (w, h) image =
-  let src = Array.init (w * h) (fun c -> image (c mod w, c / w)) in
+  let src = array_of_image (w, h) image in
   let limit_min = part lower src in
   let limit_max = part higher src in
   let do_clamp x = 
