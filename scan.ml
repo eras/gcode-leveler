@@ -125,6 +125,32 @@ let convolution_1d_cyclic kernel xs =
 
 let box_filter size = (size, Array.make (size * size) (1.0 /. float (size * size)))
 
+let gaussian sigma_x sigma_y size =
+  let sigma_x22 = 2.0 *. sigma_x ** 2.0 in
+  let sigma_y22 = 2.0 *. sigma_y ** 2.0 in
+  let f x y = exp (~-.(x ** 2.0 /. sigma_x22 +. y ** 2.0 /. sigma_y22)) in
+  let k = 
+    Array.init (size * size) 
+      (fun c -> 
+	 let scale x = (float x /. float (size - 1) -. 0.5) *. 2.0 in
+	   f (scale (c mod size)) (scale (c / size))
+      )
+  in
+  let scale = 1.0 /. sum k in
+    (size, BatArray.map ( ( *. ) scale) k)
+
+let string_of_kernel (size, m) =
+  let b = Buffer.create 1024 in
+    for y = 0 to size - 1 do
+      for x = 0 to size - 1 do
+	if x <> 0 then
+	  Buffer.add_char b ' ';
+	Printf.ksprintf (Buffer.add_string b) "% 0.3f" m.(x + y * size)
+      done;
+      Buffer.add_char b '\n'
+    done;
+    Buffer.contents b
+
 let image_of_array (w, h) bm =
   fun (x, y) ->
     if x >= 0 && y >= 0 && x < w && y < h
@@ -452,7 +478,6 @@ let edge_points image_dims image =
     ) 
       spans
 
-
 let main () =
   let filename = Sys.argv.(1) in
   let rgb24 = rgb24_of_file filename in
@@ -461,7 +486,7 @@ let main () =
   let image' = 
     let img = image in
     let img = clamp_image 0.5 0.95 image_dims img in
-    let img = convolution_2d (box_filter 9) image_dims img in
+    let img = convolution_2d (gaussian 0.7 0.7 15) image_dims img in
       img
   in
   let points = edge_points image_dims image in
