@@ -30,6 +30,21 @@ let wrap_range max x =
   then max + mx
   else mx
 
+let compress_consecutive xs =
+  let rec loop behind ahead prev =
+    match behind, ahead, prev with
+      | [], _::_, Some _ -> assert false
+      | x::xs, y::ys, Some p when y = p + 1 ->
+	  loop (x::xs) ys (Some y)
+      | x::xs, y::ys, Some p (* when y > p + 1 *) ->
+	  loop ((x + p) / 2::xs) (y::ys) None
+      | xs, y::ys, None ->
+	  loop (y::xs) ys (Some y)
+      | xs, [], _ ->
+	  xs
+  in
+    List.rev (loop [] xs None)
+
 let local_maximas ~limit xs ofs0 ofs1 window_size = 
   let module FloatMap = BatMap.Make(BatFloat) in
   let window_contents = Array.make window_size 0.0 in
@@ -65,11 +80,11 @@ let local_maximas ~limit xs ofs0 ofs1 window_size =
       for x_at = ofs0 to ofs1 do 
 	let (range_max, _) = FloatMap.max_binding !window_map in
 	  (* Printf.printf "%d %f\n" x_at range_max; *)
-	  if xs.(x_at) = range_max && limit xs.(x_at) then
+	  if xs.(x_at) > range_max *. 0.9 && limit xs.(x_at) then
 	    maximas := x_at ::!maximas;
 	  add xs.(wrap_xs (x_at + window_size / 2));
       done;
-      !maximas
+      compress_consecutive (List.sort compare !maximas)
 
 let nth_step ((v0, v1), n) m =
   let open Vector in
@@ -459,7 +474,7 @@ let edge_points image_dims image =
   let pxs = convolution_1d_cyclic (Array.make 70 (1.0 /. 70.0)) edge_loop_pxs in
   let ofs0 = Array.length first in
   let ofs1 = Array.length edge_loop_pxs - Array.length last - 1 in
-  let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs ofs0 ofs1 50 in
+  let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs ofs0 ofs1 10 in
     Printf.printf "%d maximas: %s\n" 
       (List.length maximas)
       (String.concat "," (List.map string_of_int maximas));
