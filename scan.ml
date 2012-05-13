@@ -125,6 +125,12 @@ let convolution_1d_cyclic kernel xs =
 
 let box_filter size = (size, Array.make (size * size) (1.0 /. float (size * size)))
 
+let image_of_array (w, h) bm =
+  fun (x, y) ->
+    if x >= 0 && y >= 0 && x < w && y < h
+    then bm.(y * w + x)
+    else 0.0
+
 let convolution_2d (kernel_size, kernel) (w, h) image =
   assert (kernel_size mod 2 = 1);
   let dst = Array.make (w * h) 0.0 in
@@ -143,10 +149,16 @@ let convolution_2d (kernel_size, kernel) (w, h) image =
 	  dst.(y * w + x) <- !s
       done
     done;
-    fun (x, y) ->
-      if x >= 0 && y >= 0 && x < w && y < h
-      then dst.(y * w + x)
-      else 0.0
+    image_of_array (w, h) dst
+
+let clamp x'min x'max x = min x'max (max x'min x)
+
+let clamp_image (w, h) image =
+  let src = Array.init (w * h) (fun c -> image (c mod w, c / w)) in
+  let limit_min = part 0.20 src in
+  let limit_max = part 0.95 src in
+  let dst = Array.init (w * h) (fun c -> clamp limit_min limit_max (image (c mod w, c / w))) in
+    image_of_array (w, h) dst
 
 let pixels_along_vector image ((_, n) as span) = 
   let pxs = Array.make n 0.0 in
@@ -314,6 +326,18 @@ let avg_of_line image (w, h) (angle, offset) =
   let avg = average pxs in
     avg
 
+(* clamp high values *)
+let bounded_avg_of_line image (w, h) (angle, offset) =
+  let line = line_of_angle_offset (w, h) (angle, offset) in
+  let span = (line, ab_length line) in
+  let pxs = pixels_along_vector image span in
+  let avg = average pxs in
+  let threshold = max (part 0.5 pxs) (avg *. 1.1) in
+  (* let threshold = avg *. 1.1 in *)
+  let pxs' = BatArray.map (fun x -> if x >= threshold then threshold else x) pxs in
+  let avg' = average pxs' in
+    avg'
+
 let angle_offset_cost image (w, h) (angle, offset) =
   let open BatEnum in
   let get_avg ofs = avg_of_line image (w, h) (angle, offset +. ofs) in
@@ -332,31 +356,40 @@ let angle_offset_cost image (w, h) (angle, offset) =
   let avg0 = get_avg 0.0 in
     avg0 *. avg0 +. scan_offset 1
 
-let optimize_angle_offset image dims (angle, offset) =
+let optimize_angle_offset report image dims (angle, offset) =
   let cost x =
     let c = angle_offset_cost image dims x in
       (* Printf.printf "%f %f -> %f\n" (fst x) (snd x) c; *)
       c
   in
-  let step step ((angle, offset) as x) = 
+  let step_angle (angle, offset) =
     let g = 
-      Optimize.gradient2 ~epsilon:(10.0 /. 180.0 *. pi, 4.0)
+      Optimize.derivate ~epsilon:(1.0 /. 180.0 *. pi)
 	(fun x -> cost (x, offset))
+    in
+    let step = clamp (-0.005) 0.005 (g angle *. 0.05) in
+      Printf.printf "Stepping angle %f\n" step;
+      angle +. step
+  in
+  let step_offset (angle, offset) =
+    let g = 
+      Optimize.derivate ~epsilon:1.0
 	(fun x -> cost (angle, x))
     in
-    (* let step = Vector.(g x *| (0.05, 5.0)) in *)
-    (* let step = Vector.(g x *| (0.25, 100.0) *|. 3.0 /|. (float step +. 10.0)) in *)
-    let step = Vector.(g x *| (0.25, 50.0)) in
-    let step' = 
-      let len = Vector.length step in
-	if len > 0.1 
-	then Vector.(unit step *|. 0.1)
-	else step
-    in
-      Printf.printf "Stepping %f %f\n" (fst step') (snd step');
-      Vector.(x +| step')
+    let step = clamp (-1.0) 1.0 (g offset *. 100.0) in
+      Printf.printf "Stepping offset %f\n" step;
+      offset +. step
   in
-    Optimize.optimize ~max_steps:100 ~epsilon:0.00000001 (angle, offset) cost step
+  let step step (angle, offset) = 
+    Printf.printf "step %d\n" step;
+    let angle = step_angle (angle, offset) in
+    let offset = step_offset (angle, offset) in
+      report step (angle, offset);
+      (angle, offset)
+  in
+  let x = Optimize.optimize ~max_steps:200 ~epsilon:0.00001 (angle, offset) cost step in
+    Printf.printf "Done optimizing\n";
+    x
 
 let timing label f a0 =
   let t0 = Unix.times () in
@@ -370,7 +403,8 @@ let main () =
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
-  let image_smooth = convolution_2d (box_filter 9) image_dims image in
+  let image' = convolution_2d (box_filter 9) image_dims image in
+  let image' = clamp_image image_dims image' in
   let edges = edge_vectors image_dims in
   let points =
     flip List.map edges **> fun ab ->
@@ -386,7 +420,7 @@ let main () =
 	List.map (nth_step span) maximas
   in
   let surface = Sdlvideo.set_video_mode ~w:(fst image_dims) ~h:(snd image_dims) ~bpp:24 [] in
-  let image_surface = surface_of_gray_fn image_dims image_smooth in
+  let image_surface = surface_of_gray_fn image_dims image' in
   let points_flat = List.concat points in 
   let point_pairs = pairwise points in
   let map_to_surface (x, y) = (int_of_float x, h - int_of_float y - 1) in
@@ -416,25 +450,48 @@ let main () =
   (* in *)
   (* let point_pairs_good = BatList.take 4 point_pairs_good in *)
   let angle_offsets = List.map (angle_offset_of_line image_dims) point_pairs_good in
-    Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
     List.iter 
       (fun at ->
 	 let (x, y) = map_to_surface at in
-	   ignore (Sdlgfx.filledCircleRGBA surface (Sdlvideo.rect x y 0 0) 10 (0xff, 0xff, 0xff) 0xff)
+	   ignore (Sdlgfx.filledCircleRGBA image_surface (Sdlvideo.rect x y 0 0) 10 (0xff, 0xff, 0xff) 0xff)
       )
       points_flat;
+    Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
+    Sdlvideo.update_rect surface;
     Printf.printf "Optimizing\n%!";
+    let report erase color step (angle, offset) = 
+      !erase ();
+      let (a, b) = line_of_angle_offset (w, h) (angle, offset) in
+      let (x1, y1) = map_to_surface a in
+      let (x2, y2) = map_to_surface b in
+	ignore (Sdlgfx.lineRGBA surface
+		  (Sdlvideo.rect x1 y1 0 0)
+		  (Sdlvideo.rect x2 y2 0 0)
+		  color 0xff);
+	erase := (fun () -> 
+		    ignore (Sdlgfx.lineRGBA surface
+			      (Sdlvideo.rect x1 y1 0 0)
+			      (Sdlvideo.rect x2 y2 0 0)
+			      (0x00, 0x00, 0x00) 0xff));
+	Sdlvideo.update_rect surface
+    in
+    let no_report _ _ = () in
     let optimized =
       timing "optimize angles"
 	(List.map
 	   (fun ao ->
-	      let ao' = timing "optimize_angle" (optimize_angle_offset image_smooth image_dims) ao in
+	      let erase = ref (fun () -> ()) in
+		(* (report erase (0x80, 0xff, 0x80)) *)
+	      let ao' = timing "optimize_angle" (optimize_angle_offset no_report image' image_dims) ao in
 		Printf.printf "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
+		Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
+		report erase (0x80, 0xff, 0x80) 0 ao';
 		ao'
 	   ))
 	angle_offsets
     in
       Printf.printf "Done optimizing\n%!";
+      Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
       List.iter2
 	(fun (a, b) ao ->
 	   let line (a, b) color =
