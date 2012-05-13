@@ -153,11 +153,17 @@ let convolution_2d (kernel_size, kernel) (w, h) image =
 
 let clamp x'min x'max x = min x'max (max x'min x)
 
-let clamp_image (w, h) image =
+let clamp_image lower higher (w, h) image =
   let src = Array.init (w * h) (fun c -> image (c mod w, c / w)) in
-  let limit_min = part 0.20 src in
-  let limit_max = part 0.95 src in
-  let dst = Array.init (w * h) (fun c -> clamp limit_min limit_max (image (c mod w, c / w))) in
+  let limit_min = part lower src in
+  let limit_max = part higher src in
+  let do_clamp x = 
+    match () with
+      | _ when x > limit_max -> x
+      | _ when x < limit_min -> 0.0
+      | _ -> x
+  in
+  let dst = Array.init (w * h) (fun c -> do_clamp (image (c mod w, c / w))) in
     image_of_array (w, h) dst
 
 let pixels_along_vector image ((_, n) as span) = 
@@ -452,8 +458,12 @@ let main () =
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
-  let image' = convolution_2d (box_filter 9) image_dims image in
-  let image' = clamp_image image_dims image' in
+  let image' = 
+    let img = image in
+    let img = clamp_image 0.5 0.95 image_dims img in
+    let img = convolution_2d (box_filter 9) image_dims img in
+      img
+  in
   let points = edge_points image_dims image in
   let surface = Sdlvideo.set_video_mode ~w:(fst image_dims) ~h:(snd image_dims) ~bpp:24 [] in
   let image_surface = surface_of_gray_fn image_dims image' in
