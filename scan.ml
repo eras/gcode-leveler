@@ -30,7 +30,7 @@ let wrap_range max x =
   then max + mx
   else mx
 
-let local_maximas ~limit xs window_size = 
+let local_maximas ~limit xs ofs0 ofs1 window_size = 
   let module FloatMap = BatMap.Make(BatFloat) in
   let window_contents = Array.make window_size 0.0 in
   let window_map = ref FloatMap.empty in
@@ -59,10 +59,10 @@ let local_maximas ~limit xs window_size =
   in 
   let wrap_xs = wrap_range (Array.length xs) in
     for c = 0 to window_size - 1 do
-      add xs.(wrap_xs (c - window_size / 2));
+      add xs.(wrap_xs (ofs0 + c - window_size / 2));
     done;
     let maximas = ref [] in
-      for x_at = 0 to Array.length xs - 1 do 
+      for x_at = ofs0 to ofs1 do 
 	let (range_max, _) = FloatMap.max_binding !window_map in
 	  (* Printf.printf "%d %f\n" x_at range_max; *)
 	  if xs.(x_at) = range_max && limit xs.(x_at) then
@@ -176,10 +176,12 @@ let pixels_along_vector image ((_, n) as span) =
 let edge_vectors image_dims = 
   let (w, h) = image_dims in
   let (w, h) = (float w, float h) in
-    [(vector (1.0, 0.0),		vector (w -. 2.0, 0.0));
-     (vector (w -. 1.0, 1.0),		vector (w -. 1.0, h -. 2.0));
-     (vector (w -. 1.0, h -. 1.0),	vector (1.0, h -. 1.0));
-     (vector (0.0, h -. 1.0),		vector (0.0, 1.0))]
+    [
+      (vector (1.0, 0.0),		vector (w -. 2.0, 0.0));
+      (vector (w -. 1.0, 1.0),		vector (w -. 1.0, h -. 2.0));
+      (vector (w -. 1.0, h -. 1.0),	vector (1.0, h -. 1.0));
+      (vector (0.0, h -. 1.0),		vector (0.0, 1.0))
+    ]
 
 let rgb24_of_file filename = 
   match Images.load filename [] with
@@ -387,7 +389,7 @@ let optimize_angle_offset report image dims (angle, offset) =
       report step (angle, offset);
       (angle, offset)
   in
-  let x = Optimize.optimize ~max_steps:200 ~epsilon:0.00001 (angle, offset) cost step in
+  let x = Optimize.optimize ~max_steps:200 ~epsilon:0.0001 (angle, offset) cost step in
     Printf.printf "Done optimizing\n";
     x
 
@@ -398,6 +400,53 @@ let timing label f a0 =
     Printf.printf "%s %f\n%!" label Unix.(t1.tms_utime -. t0.tms_utime);
     v
 
+let string_of_span (((x1, y1), (x2, y2)), len) =
+  Printf.sprintf "(((%f, %f), (%f, %f)), %d)" x1 y1 x2 y2 len
+
+let edge_points image_dims image =
+  let edges = edge_vectors image_dims in
+  let edge_pxs = List.map (fun ab -> pixels_along_vector image (ab, ab_length ab)) edges in
+  let last = List.nth edge_pxs (List.length edge_pxs - 1) in
+  let first = List.nth edge_pxs 0 in
+  let spans = 
+    List.rev (
+      snd (
+	List.fold_left
+	  (fun (offset, offsets) (ab, pxs) ->
+	     let span = (ab, ab_length ab) in
+	       (offset + Array.length pxs, (((offset, offset + Array.length pxs - 1), span)::offsets))
+	  )
+	  (Array.length last, [])
+	  (List.combine edges edge_pxs)
+      )
+    )
+  in
+  let edge_pxs_single = Array.concat edge_pxs in
+  let edge_loop_pxs = Array.concat [last; edge_pxs_single; first] in
+  let avg = average edge_pxs_single in
+  let pxs = convolution_1d_cyclic (Array.make 70 (1.0 /. 70.0)) edge_loop_pxs in
+  let ofs0 = Array.length first in
+  let ofs1 = Array.length edge_loop_pxs - Array.length last - 1 in
+  let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs ofs0 ofs1 50 in
+    Printf.printf "%d maximas: %s\n" 
+      (List.length maximas)
+      (String.concat "," (List.map string_of_int maximas));
+    List.map (
+      fun ((ofs0, ofs1), span) ->
+	let ms =
+	  List.filter
+	    (fun x -> x >= ofs0 && x <= ofs1)
+	    maximas
+	in
+	  Printf.printf "New edge %d-%d %s\n" ofs0 ofs1 (string_of_span span);
+	  List.map (fun ms -> 
+		      Printf.printf "ms %d -> %d\n" ms (ms - ofs0);
+		      nth_step span (ms - ofs0)
+		   ) ms
+    ) 
+      spans
+
+
 let main () =
   let filename = Sys.argv.(1) in
   let rgb24 = rgb24_of_file filename in
@@ -405,20 +454,7 @@ let main () =
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
   let image' = convolution_2d (box_filter 9) image_dims image in
   let image' = clamp_image image_dims image' in
-  let edges = edge_vectors image_dims in
-  let points =
-    flip List.map edges **> fun ab ->
-      let span = (ab, ab_length ab) in
-      let pxs = pixels_along_vector image span in
-      let avg =  average pxs in
-      let pxs = convolution_1d_cyclic (Array.make 40 (1.0 /. 40.0)) pxs in
-      (* let pxs = Array.map (fun x -> if x >= avg then x else 0.0) pxs in *)
-      let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs 60 in
-	Printf.printf "%d maximas: %s\n" 
-	  (List.length maximas)
-	  (String.concat "," (List.map string_of_int maximas));
-	List.map (nth_step span) maximas
-  in
+  let points = edge_points image_dims image in
   let surface = Sdlvideo.set_video_mode ~w:(fst image_dims) ~h:(snd image_dims) ~bpp:24 [] in
   let image_surface = surface_of_gray_fn image_dims image' in
   let points_flat = List.concat points in 
