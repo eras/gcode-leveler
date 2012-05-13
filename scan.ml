@@ -501,6 +501,7 @@ let main () =
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
+  let image'low = part 0.5 (array_of_image image_dims image) in
   let image' = 
     let img = image in
     let img = clamp_image 0.5 0.95 image_dims img in
@@ -567,22 +568,29 @@ let main () =
     let no_report _ _ = () in
     let optimized =
       timing "optimize angles"
-	(List.map
+	(BatList.filter_map
 	   (fun ao ->
 	      let erase = ref (fun () -> ()) in
-		(* (report erase (0x80, 0xff, 0x80)) *)
-	      let ao' = timing "optimize_angle" (optimize_angle_offset no_report image' image_dims) ao in
+	      let r = report erase (0x80, 0xff, 0x80) in
+	      (* let r = no_report in *)
+	      let ao' = timing "optimize_angle" (optimize_angle_offset r image' image_dims) ao in
 		Printf.printf "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
 		Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
-		report erase (0x80, 0xff, 0x80) 0 ao';
-		ao'
+		let ab = line_of_angle_offset (w, h) ao' in
+		let pxs = pixels_along_vector image (ab, ab_length ab) in
+		  if part 0.10 pxs < image'low 
+		  then None
+		  else (
+		    report erase (0x80, 0xff, 0x80) 0 ao';
+		    Some ao'
+		  )
 	   ))
 	angle_offsets
     in
       Printf.printf "Done optimizing\n%!";
-      Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
-      List.iter2
-	(fun (a, b) ao ->
+      Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
+      List.iter
+	(fun ao ->
 	   let line (a, b) color =
 	     let (x1, y1) = map_to_surface a in
 	     let (x2, y2) = map_to_surface b in
@@ -595,7 +603,7 @@ let main () =
 	     (* line (a, b) (0xff, 0xff, 0xff); *)
 	     line (a'o, b'o) (0x80, 0xff, 0x80);
 	)
-	point_pairs_good optimized;
+	optimized;
       Sdlvideo.update_rect surface;
       wait_exit () 
 
