@@ -611,6 +611,7 @@ let main () =
 			 color 0xff)
 	   in
 	   let (a'o, b'o) = line_of_angle_offset image_dims ao in
+	     Printf.printf "%f,%f\n" (fst ao /. pi *. 180.0) (snd ao);
 	     (* line (a, b) (0xff, 0xff, 0xff); *)
 	     line (a'o, b'o) (0x80, 0xff, 0x80);
 	)
