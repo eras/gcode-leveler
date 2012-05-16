@@ -30,14 +30,14 @@ let wrap_range max x =
   then max + mx
   else mx
 
-let compress_consecutive xs =
+let compress_consecutive condition combine xs =
   let rec loop behind ahead prev =
     match behind, ahead, prev with
       | [], _::_, Some _ -> assert false
-      | x::xs, y::ys, Some p when y = p + 1 ->
+      | x::xs, y::ys, Some p when condition p y ->
 	  loop (x::xs) ys (Some y)
       | x::xs, y::ys, Some p (* when y > p + 1 *) ->
-	  loop ((x + p) / 2::xs) (y::ys) None
+	  loop (combine x p::xs) (y::ys) None
       | xs, y::ys, None ->
 	  loop (y::xs) ys (Some y)
       | xs, [], _ ->
@@ -84,7 +84,7 @@ let local_maximas ~limit xs ofs0 ofs1 window_size =
 	    maximas := x_at ::!maximas;
 	  add xs.(wrap_xs (x_at + window_size / 2));
       done;
-      compress_consecutive (List.sort compare !maximas)
+      compress_consecutive (fun a b -> b = a + 1) (fun a b -> (a + b) / 2) (List.sort compare !maximas)
 
 let nth_step ((v0, v1), n) m =
   let open Vector in
