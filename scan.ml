@@ -587,6 +587,17 @@ let main () =
 	   ))
 	angle_offsets
     in
+    let optimized = 
+      compress_consecutive
+	(fun (a'angle, a'offset) (b'angle, b'offset) ->
+	   abs_float (a'angle -. b'angle) < 0.01 &&
+	     abs_float (a'offset -. b'offset) < 0.5
+	)
+	(fun (a'angle, a'offset) (b'angle, b'offset) ->
+	   ((a'angle +. b'angle) /. 2.0,
+	    (a'offset +. b'offset) /. 2.0))
+	(List.sort compare optimized)
+    in
       Printf.printf "Done optimizing\n%!";
       Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
       List.iter
