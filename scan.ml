@@ -1,5 +1,6 @@
 open BatPervasives
 open BatStd
+open Utils
 
 module Vector =
 struct
@@ -106,14 +107,6 @@ let fold_along_vector f x0 ((v0, v1), n) =
 
 let get image (x, y) = image (int_of_float (x +. 0.5), int_of_float (y +. 0.5))
 
-let sum xs = Array.fold_left (+.) 0.0 xs 
-
-let sum_list xs = List.fold_left (+.) 0.0 xs 
-
-let minimum xs = Array.fold_left min infinity xs
-
-let maximum xs = Array.fold_left max neg_infinity xs
-
 let part n xs =
   let xs' = 
     let x = Array.copy xs in
@@ -123,10 +116,6 @@ let part n xs =
   let len = Array.length xs in
   let n' = min (len - 1) (int_of_float (float len *. n)) in
     xs'.(n')
-
-let average xs = sum xs /. float (Array.length xs) 
-
-let average_list xs = sum_list xs /. float (List.length xs) 
 
 let convolution_1d_cyclic kernel xs = 
   let result = Array.make (Array.length xs) 0.0 in
@@ -191,8 +180,6 @@ let convolution_2d (kernel_size, kernel) (w, h) image =
       done
     done;
     image_of_array (w, h) dst
-
-let clamp x'min x'max x = min x'max (max x'min x)
 
 let array_of_image (w, h) image = 
   Array.init (w * h) (fun c -> image (c mod w, c / w))
@@ -442,13 +429,6 @@ let optimize_angle_offset report image dims (angle, offset) =
   let x = Optimize.optimize ~max_steps:200 ~epsilon:0.0001 (angle, offset) cost step in
     Printf.printf "Done optimizing\n";
     x
-
-let timing label f a0 =
-  let t0 = Unix.times () in
-  let v = f a0 in
-  let t1 = Unix.times () in
-    Printf.printf "%s %f\n%!" label Unix.(t1.tms_utime -. t0.tms_utime);
-    v
 
 let string_of_span (((x1, y1), (x2, y2)), len) =
   Printf.sprintf "(((%f, %f), (%f, %f)), %d)" x1 y1 x2 y2 len
