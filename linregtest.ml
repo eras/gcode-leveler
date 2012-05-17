@@ -20,3 +20,14 @@ let _ =
     Array.iter (Printf.printf "%f ") theta;
     Printf.printf "\n"
 
+(* 0.100000: 118.332092 28.918486 48.072728 82.298368 *)
+(* 0.300000: 113.345793 13.885774 44.496202 79.221698 *)
+
+let training3 = [|p2 118.3 28.918486 0.1;
+		  p2 113.3 13.885774 0.3|];;
+
+let _ = 
+  let theta = Optimize.linreg ~max_steps:50 ~epsilon 0.001 [|10.0; 10.0; 10.0|] training3 in
+    Array.iter (Printf.printf "%f ") theta;
+    Printf.printf "\n"
+
