@@ -34,7 +34,11 @@ let gradient2 ~epsilon f1 f2 (x1, x2) =
  *)
 
 let linreg_h2 x theta = 
-  theta.(0) +. theta.(1) *. x.(0)
+  let sum = ref theta.(0) in
+    for c = 0 to Array.length x - 1 do
+      sum := !sum +. theta.(c + 1) *. x.(c);
+    done;
+    !sum
 
 let (!@) x = float (Array.length x)
 
@@ -42,20 +46,28 @@ let linreg_cost xs ys theta =
   assert (Array.length xs = Array.length ys);
   1.0 /. (2.0 *. !@ theta) *. sum (BatArray.map2 (fun x y -> (linreg_h2 x theta -. y) ** 2.0) xs ys)
 
-let linreg_cost2' xs ys theta =
-  assert (Array.length theta = 2);
-  assert (Array.length xs = Array.length ys);
-  [|1.0 /. !@ theta *. sum (BatArray.map2 (fun x y -> linreg_h2 x theta -. y) xs ys);
-    1.0 /. !@ theta *. sum (BatArray.map2 (fun x y -> (linreg_h2 x theta -. y) *. x.(0)) xs ys)|]
+let trace_exn label f a =
+  try f a 
+  with exn -> 
+    Printf.printf "exception at %s\n" label;
+    raise exn
 
-let linreg ?max_steps ~epsilon theta0 training =
+let linreg_cost' xs ys theta =
+  assert (Array.length xs = Array.length ys);
+  let m = Array.length xs in
+    Array.init (Array.length theta) **> fun j ->
+      1.0 /. !@ theta *. sum (Array.init m **> fun i ->
+				let x = xs.(i) in
+				let y = ys.(i) in
+				  (linreg_h2 x theta -. y) *. (if j = 0 then 1.0 else x.(j - 1))
+			     )
+
+let linreg ?max_steps ~epsilon alpha theta0 training =
   let xs = Array.map fst training in
   let ys = Array.map snd training in
-    assert (Array.length theta0 = 2);	(* other theta sizes not supported yet *)
-    assert (Array.length xs.(0) = 1); 	(* other sizes not supported yet *)
     optimize ?max_steps ~epsilon theta0
       (linreg_cost xs ys)
       (fun _nth_step theta ->
-	 let step = linreg_cost2' xs ys theta in
+	 let step = Array.map (( *. ) alpha) **> linreg_cost' xs ys theta in
 	   BatArray.map2 (-.) theta step
       )
