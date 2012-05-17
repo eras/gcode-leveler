@@ -476,8 +476,7 @@ let edge_points image_dims image =
     ) 
       spans
 
-let main () =
-  let filename = Sys.argv.(1) in
+let analyze surface filename =
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
@@ -489,7 +488,6 @@ let main () =
       img
   in
   let points = edge_points image_dims image in
-  let surface = Sdlvideo.set_video_mode ~w:(fst image_dims) ~h:(snd image_dims) ~bpp:24 [] in
   let image_surface = surface_of_gray_fn image_dims image' in
   let points_flat = List.concat points in 
   let point_pairs = pairwise points in
@@ -596,7 +594,12 @@ let main () =
 	     line (a'o, b'o) (0x80, 0xff, 0x80);
 	)
 	optimized;
-      Sdlvideo.update_rect surface;
-      wait_exit () 
+      Sdlvideo.update_rect surface
+
+let main () =
+  let filename = Sys.argv.(1) in
+  let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
+    analyze surface filename;
+    wait_exit () 
 
 let _ = main ()
