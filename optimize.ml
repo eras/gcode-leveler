@@ -62,9 +62,27 @@ let linreg_cost' xs ys theta =
 				  (linreg_h2 x theta -. y) *. (if j = 0 then 1.0 else x.(j - 1))
 			     )
 
+let normalization xs =
+  let mu = average xs in
+  let mn = Array.map (fun x -> x -. mu) xs in
+  let sigma = stddev mn in
+  let normalize x = (x -. mu) /. sigma in
+  let denormalize x = x *. sigma +. mu in
+    (normalize, denormalize)
+
+let transpose_array xs =
+  Array.init (Array.length xs.(0)) **> fun x ->
+    Array.init (Array.length xs) **> fun y ->
+      xs.(y).(x)
+
 let linreg ?max_steps ~epsilon alpha theta0 training =
   let xs = Array.map fst training in
+  let xs' = transpose_array xs in
+  let ns = Array.map normalization xs' in
+  let xs' = BatArray.map2 (fun (n, _n') x -> Array.map n x) ns xs' in
+  let xs = transpose_array xs' in
   let ys = Array.map snd training in
+    assert (Array.length theta0 = Array.length (fst training.(0)) + 1);
     optimize ?max_steps ~epsilon theta0
       (linreg_cost xs ys)
       (fun _nth_step theta ->
