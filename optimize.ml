@@ -83,9 +83,15 @@ let linreg ?max_steps ~epsilon alpha theta0 training =
   let xs = transpose_array xs' in
   let ys = Array.map snd training in
     assert (Array.length theta0 = Array.length (fst training.(0)) + 1);
-    optimize ?max_steps ~epsilon theta0
-      (linreg_cost xs ys)
-      (fun _nth_step theta ->
-	 let step = Array.map (( *. ) alpha) **> linreg_cost' xs ys theta in
-	   BatArray.map2 (-.) theta step
-      )
+    let theta = 
+      optimize ?max_steps ~epsilon theta0
+	(linreg_cost xs ys)
+	(fun _nth_step theta ->
+	   let step = Array.map (( *. ) alpha) **> linreg_cost' xs ys theta in
+	     BatArray.map2 (-.) theta step
+	)
+    in
+    let normalize_row xs'row = BatArray.map2 (fun (n, _n') x -> n x) ns xs'row in
+      (theta, normalize_row)
+      
+
