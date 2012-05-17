@@ -8,6 +8,10 @@ struct
   include Vector.Ops
 end
 
+type angle_offset = (float * float)
+
+type z_offset = float
+
 type vector = (float * float)
 
 let vector ((x : float), (y : float)) = (x, y)
@@ -476,6 +480,17 @@ let edge_points image_dims image =
     ) 
       spans
 
+let compress_consecutive_lines aos =
+  compress_consecutive
+    (fun (a'angle, a'offset) (b'angle, b'offset) ->
+       abs_float (a'angle -. b'angle) < 0.01 &&
+	 abs_float (a'offset -. b'offset) < 0.5
+    )
+    (fun (a'angle, a'offset) (b'angle, b'offset) ->
+       ((a'angle +. b'angle) /. 2.0,
+	(a'offset +. b'offset) /. 2.0))
+    (List.sort compare aos)
+
 let analyze surface filename =
   let rgb24 = rgb24_of_file filename in
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
@@ -565,17 +580,7 @@ let analyze surface filename =
 	   ))
 	angle_offsets
     in
-    let optimized = 
-      compress_consecutive
-	(fun (a'angle, a'offset) (b'angle, b'offset) ->
-	   abs_float (a'angle -. b'angle) < 0.01 &&
-	     abs_float (a'offset -. b'offset) < 0.5
-	)
-	(fun (a'angle, a'offset) (b'angle, b'offset) ->
-	   ((a'angle +. b'angle) /. 2.0,
-	    (a'offset +. b'offset) /. 2.0))
-	(List.sort compare optimized)
-    in
+    let optimized = compress_consecutive_lines optimized in
       Printf.printf "Done optimizing\n%!";
       Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
       List.iter
@@ -594,12 +599,124 @@ let analyze surface filename =
 	     line (a'o, b'o) (0x80, 0xff, 0x80);
 	)
 	optimized;
-      Sdlvideo.update_rect surface
+      Sdlvideo.update_rect surface;
+      optimized
+
+let parse_sample_ofs str =
+  try
+    match Pcre.extract ~full_match:false ~pat:"(.+)=([0-9.]+)" str with
+      | [|name; offset|] -> (name, float_of_string offset)
+      | _ -> assert false
+  with Not_found -> failwith "Invalid sample name. Must be of format filename=offset"
+
+let usage () =
+  Printf.printf "usage: scan pic1.jpg=0.1 pic2.jpg=0.2\n%!"
+
+(* picked from http://stackoverflow.com/questions/3989776/transpose-of-a-list-of-lists :( *)
+let rec transpose list = match list with
+  | []             -> []
+  | []   :: xss    -> transpose xss
+  | (x::xs) :: xss ->
+      (x :: List.map List.hd xss) :: transpose (xs :: List.map List.tl xss)
+
+let similar_angle a b = abs_float (a -. b) < (10.0 /. 180.0 *. pi)
+
+let analyze_data (data : (z_offset * angle_offset list) list) =
+  let similar_angle_offset base_angle (angle, _offset) = similar_angle base_angle angle in
+  let angles = 
+    compress_consecutive 
+      similar_angle
+      (fun a b -> (a +. b) /. 2.0)
+      (List.sort compare **>
+	 List.map fst (List.concat (List.map snd data)))
+  in
+  let angle_data = 
+    BatList.filter_map
+      (fun base_angle ->
+	 let offsets = 
+	   BatList.mapi
+	     (fun index (z_offset, aos) -> 
+		(index, 
+		 match BatList.Exceptionless.find (similar_angle_offset base_angle) aos with
+		   | None -> None
+		   | Some (_, offset) -> Some offset))
+	     data
+	 in
+	   if List.exists (function (_index, None) -> true | _ -> false) offsets 
+	   then None
+	   else Some (base_angle, List.map (fun (index, ofs) -> (index, BatOption.get ofs)) offsets)
+      )
+      angles
+  in
+  let training_data =
+    let index_offsets = List.map snd angle_data in
+    let index_offsets = transpose index_offsets in
+    let offsets = 
+      List.map 
+	(fun ix_ofs -> 
+	   let index = fst (List.hd ix_ofs) in
+	   let z_offset = fst (List.nth data index) in
+	     (Array.of_list (List.map snd ix_ofs), z_offset)
+	)
+	index_offsets
+    in
+      Array.of_list offsets
+  in
+    (* assert (let n = List.length (snd (List.hd angle_data)) in *)
+    (* 	      List.for_all (fun (_z_offset, offsets) -> List.length offsets = n) angle_data); *)
+    Printf.printf "angle data\n";
+    List.iter
+      (fun (angle, data) ->
+	 Printf.printf "angle: %f\n" (angle /. pi *. 180.0);
+	 List.iter
+	   (fun (index, offset) ->
+	      Printf.printf "  index: %d offset: %f\n" index offset;
+	   )
+	   data
+      )
+      angle_data;
+    Printf.printf "training data\n";
+    Array.iter
+      (fun (offsets, z_ofs) ->
+	 Printf.printf "%f:" z_ofs;
+	 Array.iter (Printf.printf " %f") offsets;
+	 Printf.printf "\n";
+      )
+      training_data;
+    (List.map fst angle_data, training_data)
+
+(* angles: -2.81137104215 0.334435358196 2.18057844162 2.80557972733 3.05623971742 *)
+(* aos: (-2.807649,118.332092) (0.334435,-118.207293) (2.176905,28.918486) (2.807629,48.072728) (3.059995,82.298368) *)
+(* offsets: 118.332091728 -118.207292594 28.9184862267 48.072727735 82.2983682201 *)
+
+let query (surface, angles, theta, normalize) filename =
+    Printf.printf "angles: %s\n%!" (String.concat " " (List.map string_of_float angles));
+  let aos = analyze surface filename in
+    Printf.printf "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos));
+  let offsets = Array.of_list (List.map (fun angle -> snd (List.find (fun (angle', _offset) -> similar_angle angle angle') aos)) angles) in
+    Printf.printf "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets)));
+  let offset = Optimize.linreg_hypo (normalize offsets) theta in
+    Printf.printf "%s offset %f\n%!" filename offset
 
 let main () =
-  let filename = Sys.argv.(1) in
-  let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
-    analyze surface filename;
-    wait_exit () 
+  let samples = ref [] in
+  let task = ref (fun _ -> ()) in
+  let args = [("-sample", Arg.String (fun s -> samples := parse_sample_ofs s :: !samples), "Add a new sample in form filename=offset");
+	      ("-query", Arg.String (fun s -> task := (fun env -> query env s)), "Query the height of an image")] in
+    Arg.parse args (fun _ -> failwith "unknown argument") "scan - determine z offset from images";
+    if List.length !samples = 0 
+    then usage () 
+    else
+      let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
+      let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) !samples) in
+      let num_features = Array.length (fst training_data.(0)) in
+	assert (List.length angles = num_features);
+	Printf.printf "Number of features: %d\n%!" num_features;
+      let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:1000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
+	Printf.printf "theta: ";
+	Array.iter (Printf.printf " %f") theta;
+	Printf.printf "\n";
+	!task (surface, angles, theta, normalize);
+	()
 
 let _ = main ()
