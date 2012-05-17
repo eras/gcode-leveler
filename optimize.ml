@@ -33,7 +33,7 @@ let gradient2 ~epsilon f1 f2 (x1, x2) =
 
  *)
 
-let linreg_h2 x theta = 
+let linreg_hypo x theta = 
   let sum = ref theta.(0) in
     for c = 0 to Array.length x - 1 do
       sum := !sum +. theta.(c + 1) *. x.(c);
@@ -44,7 +44,7 @@ let (!@) x = float (Array.length x)
 
 let linreg_cost xs ys theta =
   assert (Array.length xs = Array.length ys);
-  1.0 /. (2.0 *. !@ theta) *. sum (BatArray.map2 (fun x y -> (linreg_h2 x theta -. y) ** 2.0) xs ys)
+  1.0 /. (2.0 *. !@ theta) *. sum (BatArray.map2 (fun x y -> (linreg_hypo x theta -. y) ** 2.0) xs ys)
 
 let trace_exn label f a =
   try f a 
@@ -59,7 +59,7 @@ let linreg_cost' xs ys theta =
       1.0 /. !@ theta *. sum (Array.init m **> fun i ->
 				let x = xs.(i) in
 				let y = ys.(i) in
-				  (linreg_h2 x theta -. y) *. (if j = 0 then 1.0 else x.(j - 1))
+				  (linreg_hypo x theta -. y) *. (if j = 0 then 1.0 else x.(j - 1))
 			     )
 
 let normalization xs =
