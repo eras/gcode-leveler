@@ -3,7 +3,7 @@ open Utils
 
 (* this is not gradient descent by itself, it depends
    on the cost and step functions *)
-let optimize ?max_steps ~epsilon (x0:'a) (cost:'a -> float) (step:int -> 'a -> 'a) =
+let optimize ?max_steps ?(min_steps=0) ~epsilon (x0:'a) (cost:'a -> float) (step:int -> 'a -> 'a) =
   let rec loop cur_step prev_cost x =
     if (match max_steps with
 	  | Some max_steps when cur_step >= max_steps -> false
@@ -11,7 +11,7 @@ let optimize ?max_steps ~epsilon (x0:'a) (cost:'a -> float) (step:int -> 'a -> '
     then
       let new_cost = cost x in
 	Printf.printf "cost difference %f\n" (new_cost -. prev_cost);
-	if abs_float (new_cost -. prev_cost) < epsilon 
+	if abs_float (new_cost -. prev_cost) < epsilon && cur_step >= min_steps
 	 then 
 	   let _ = Printf.printf "found at step %d\n" cur_step in
 	     x
@@ -75,7 +75,7 @@ let transpose_array xs =
     Array.init (Array.length xs) **> fun y ->
       xs.(y).(x)
 
-let linreg ?max_steps ~epsilon alpha theta0 training =
+let linreg ?max_steps ?min_steps ~epsilon alpha theta0 training =
   let xs = Array.map fst training in
   let xs' = transpose_array xs in
   let ns = Array.map normalization xs' in
@@ -84,7 +84,7 @@ let linreg ?max_steps ~epsilon alpha theta0 training =
   let ys = Array.map snd training in
     assert (Array.length theta0 = Array.length (fst training.(0)) + 1);
     let theta = 
-      optimize ?max_steps ~epsilon theta0
+      optimize ?max_steps ?min_steps ~epsilon theta0
 	(linreg_cost xs ys)
 	(fun _nth_step theta ->
 	   let step = Array.map (( *. ) alpha) **> linreg_cost' xs ys theta in
