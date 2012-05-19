@@ -701,6 +701,14 @@ let query (surface, angles, theta, normalize) filename =
   let offset = Optimize.linreg_hypo (normalize offsets) theta in
     Printf.printf "%s offset %f\n%!" filename offset
 
+let map_features xs fs =
+  let mapping row =
+    let num_els = Array.length row in
+      Array.init (num_els * Array.length fs) (fun i -> fs.(i / num_els) row.(i mod num_els))
+  in
+    (Array.map (fun (data, result) -> (mapping data, result)) xs,
+     mapping)
+
 let main () =
   let samples = ref [] in
   let task = ref (fun _ -> ()) in
@@ -712,14 +720,16 @@ let main () =
     else
       let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
       let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) !samples) in
+      (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
+      let extra_features = [|(fun x -> x ** 2.0)|] in
+      let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
       let num_features = Array.length (fst training_data.(0)) in
-	assert (List.length angles = num_features);
-	debug "Number of features: %d\n%!" num_features;
+      let _ = Printf.printf "Number of features: %d\n%!" num_features in
       let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
 	Printf.printf "theta: ";
 	Array.iter (Printf.printf " %f") theta;
 	Printf.printf "\n";
-	!task (surface, angles, theta, normalize);
+	!task (surface, angles, theta, (fun x -> normalize (generate_features x)));
 	()
 
 let _ = main ()
