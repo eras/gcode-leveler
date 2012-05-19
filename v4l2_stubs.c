@@ -213,7 +213,7 @@ v4l2_open(value name, value width, value height)
     goto cleanup;
   }
 
-  t = malloc(sizeof(t));
+  t = malloc(sizeof(*t));
   if (!t) {
     msg = "v4l2_open: cannot allocate memory";
     goto cleanup;
