@@ -10,10 +10,10 @@ let optimize ?max_steps ?(min_steps=0) ~epsilon (x0:'a) (cost:'a -> float) (step
 	  | _ -> true)
     then
       let new_cost = cost x in
-	Printf.printf "cost difference %f\n" (new_cost -. prev_cost);
+	debug "cost difference %f\n" (new_cost -. prev_cost);
 	if abs_float (new_cost -. prev_cost) < epsilon && cur_step >= min_steps
 	 then 
-	   let _ = Printf.printf "found at step %d\n" cur_step in
+	   let _ = debug "found at step %d\n" cur_step in
 	     x
 	else loop (cur_step + 1) new_cost (step cur_step x)
     else

@@ -59,7 +59,7 @@ let local_maximas ~limit xs ofs0 ofs1 window_size =
   let window_num_els = ref 0 in
   let remove () =
     let x = window_contents.(!window_remove_ofs) in
-      (* Printf.printf "Removing %f at %d\n" x !window_remove_ofs; *)
+      (* debug "Removing %f at %d\n" x !window_remove_ofs; *)
       incr_wrap window_size window_remove_ofs;
       decr window_num_els;
       let v = FloatMap.find x !window_map in
@@ -70,7 +70,7 @@ let local_maximas ~limit xs ofs0 ofs1 window_size =
   let add x =
     if !window_num_els > 0 && !window_add_ofs = !window_remove_ofs then
       remove ();
-    (* Printf.printf "Adding %f at %d\n" x !window_add_ofs; *)
+    (* debug "Adding %f at %d\n" x !window_add_ofs; *)
     window_contents.(!window_add_ofs) <- x;
     incr_wrap window_size window_add_ofs;
     incr window_num_els;
@@ -84,7 +84,7 @@ let local_maximas ~limit xs ofs0 ofs1 window_size =
     let maximas = ref [] in
       for x_at = ofs0 to ofs1 do 
 	let (range_max, _) = FloatMap.max_binding !window_map in
-	  (* Printf.printf "%d %f\n" x_at range_max; *)
+	  (* debug "%d %f\n" x_at range_max; *)
 	  if xs.(x_at) > range_max *. 0.9 && limit xs.(x_at) then
 	    maximas := x_at ::!maximas;
 	  add xs.(wrap_xs (x_at + window_size / 2));
@@ -402,7 +402,7 @@ let angle_offset_cost image (w, h) (angle, offset) =
 let optimize_angle_offset report image dims (angle, offset) =
   let cost x =
     let c = angle_offset_cost image dims x in
-      (* Printf.printf "%f %f -> %f\n" (fst x) (snd x) c; *)
+      (* debug "%f %f -> %f\n" (fst x) (snd x) c; *)
       c
   in
   let step_angle (angle, offset) =
@@ -411,7 +411,7 @@ let optimize_angle_offset report image dims (angle, offset) =
 	(fun x -> cost (x, offset))
     in
     let step = clamp (-0.005) 0.005 (g angle *. 0.05) in
-      Printf.printf "Stepping angle %f\n" step;
+      debug "Stepping angle %f\n" step;
       angle +. step
   in
   let step_offset (angle, offset) =
@@ -420,18 +420,18 @@ let optimize_angle_offset report image dims (angle, offset) =
 	(fun x -> cost (angle, x))
     in
     let step = clamp (-1.0) 1.0 (g offset *. 100.0) in
-      Printf.printf "Stepping offset %f\n" step;
+      debug "Stepping offset %f\n" step;
       offset +. step
   in
   let step step (angle, offset) = 
-    Printf.printf "step %d\n" step;
+    debug "step %d\n" step;
     let angle = step_angle (angle, offset) in
     let offset = step_offset (angle, offset) in
       report step (angle, offset);
       (angle, offset)
   in
   let x = Optimize.optimize ~max_steps:200 ~epsilon:0.0001 (angle, offset) cost step in
-    Printf.printf "Done optimizing\n";
+    debug "Done optimizing\n";
     x
 
 let string_of_span (((x1, y1), (x2, y2)), len) =
@@ -462,7 +462,7 @@ let edge_points image_dims image =
   let ofs0 = Array.length first in
   let ofs1 = Array.length edge_loop_pxs - Array.length last - 1 in
   let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs ofs0 ofs1 10 in
-    Printf.printf "%d maximas: %s\n" 
+    debug "%d maximas: %s\n" 
       (List.length maximas)
       (String.concat "," (List.map string_of_int maximas));
     List.map (
@@ -472,9 +472,9 @@ let edge_points image_dims image =
 	    (fun x -> x >= ofs0 && x <= ofs1)
 	    maximas
 	in
-	  Printf.printf "New edge %d-%d %s\n" ofs0 ofs1 (string_of_span span);
+	  debug "New edge %d-%d %s\n" ofs0 ofs1 (string_of_span span);
 	  List.map (fun ms -> 
-		      Printf.printf "ms %d -> %d\n" ms (ms - ofs0);
+		      debug "ms %d -> %d\n" ms (ms - ofs0);
 		      nth_step span (ms - ofs0)
 		   ) ms
     ) 
@@ -497,10 +497,13 @@ let analyze surface filename =
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
   let image'low = part 0.5 (array_of_image image_dims image) in
   let image' = 
-    let img = image in
-    let img = clamp_image 0.5 0.95 image_dims img in
-    let img = convolution_2d (gaussian 0.7 0.7 15) image_dims img in
-      img
+    let filter () =
+      let img = image in
+      let img = clamp_image 0.5 0.95 image_dims img in
+      let img = convolution_2d (gaussian 0.7 0.7 15) image_dims img in
+	img
+    in
+      timing "filter" filter ()
   in
   let points = edge_points image_dims image in
   let image_surface = surface_of_gray_fn image_dims image' in
@@ -517,7 +520,7 @@ let analyze surface filename =
 	 let min = minimum pxs in
 	 let max = maximum pxs in
 	 let threshold =  0.9 *. average [|pxs.(0); pxs.(Array.length pxs - 1)|] in
-	   Printf.printf "%f %f %f\n%!" threshold min max;
+	   debug "%f %f %f\n%!" threshold min max;
 	   (* avg > 0.4 && min > 0.3 *)
 	   avg > threshold
       )
@@ -567,7 +570,7 @@ let analyze surface filename =
 	      let r = report erase (0x80, 0xff, 0x80) in
 	      (* let r = no_report in *)
 	      let ao' = timing "optimize_angle" (optimize_angle_offset r image' image_dims) ao in
-		Printf.printf "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
+		debug "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
 		Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
 		let ab = line_of_angle_offset (w, h) ao' in
 		let pxs = pixels_along_vector image (ab, ab_length ab) in
@@ -675,12 +678,12 @@ let analyze_data (data : (z_offset * angle_offset list) list) =
 	   data
       )
       angle_data;
-    Printf.printf "training data\n";
+    debug "training data\n";
     Array.iter
       (fun (offsets, z_ofs) ->
-	 Printf.printf "%f:" z_ofs;
-	 Array.iter (Printf.printf " %f") offsets;
-	 Printf.printf "\n";
+	 debug "%f:" z_ofs;
+	 Array.iter (debug " %f") offsets;
+	 debug "\n";
       )
       training_data;
     (List.map fst angle_data, training_data)
@@ -690,11 +693,11 @@ let analyze_data (data : (z_offset * angle_offset list) list) =
 (* offsets: 118.332091728 -118.207292594 28.9184862267 48.072727735 82.2983682201 *)
 
 let query (surface, angles, theta, normalize) filename =
-    Printf.printf "angles: %s\n%!" (String.concat " " (List.map string_of_float angles));
+  let _ = debug "angles: %s\n%!" (String.concat " " (List.map string_of_float angles)) in
   let aos = analyze surface filename in
-    Printf.printf "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos));
+  let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
   let offsets = Array.of_list (List.map (fun angle -> snd (List.find (fun (angle', _offset) -> similar_angle angle angle') aos)) angles) in
-    Printf.printf "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets)));
+  let _ = debug "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
   let offset = Optimize.linreg_hypo (normalize offsets) theta in
     Printf.printf "%s offset %f\n%!" filename offset
 
@@ -711,7 +714,7 @@ let main () =
       let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) !samples) in
       let num_features = Array.length (fst training_data.(0)) in
 	assert (List.length angles = num_features);
-	Printf.printf "Number of features: %d\n%!" num_features;
+	debug "Number of features: %d\n%!" num_features;
       let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:1000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
 	Printf.printf "theta: ";
 	Array.iter (Printf.printf " %f") theta;

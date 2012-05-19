@@ -24,3 +24,5 @@ let timing label f a0 =
   let t1 = Unix.times () in
     Printf.printf "%s %f\n%!" label Unix.(t1.tms_utime -. t0.tms_utime);
     v
+
+let debug fmt = Printf.ksprintf ignore fmt
