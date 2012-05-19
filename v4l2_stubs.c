@@ -31,6 +31,8 @@ struct t {
   struct buffer*	buffers;
   
   char*			(*start)(struct t*);
+  char*			(*stop)(struct t*);
+  char*			(*done)(struct t*);
   value			(*get_frame)(struct t*, char** error);
 };
 
@@ -66,6 +68,29 @@ start_mmap(struct t* t)
 
   if (xioctl(t->fd, VIDIOC_STREAMON, &type) == -1)
     return "start_mmap: cannot start stream monitor";
+
+  return NULL;
+}
+
+static char*
+stop_mmap(struct t* t)
+{
+  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+
+  if (xioctl(t->fd, VIDIOC_STREAMOFF, &type) == -1)
+    return "stop_mmap: cannot stop stream";
+
+  return NULL;
+}
+
+static char*
+done_mmap(struct t* t)
+{
+  int i;
+  for (i = 0; i < t->n_buffers; ++i) {
+    if (munmap(t->buffers[i].start, t->buffers[i].length) == -1)
+      return "done_mmap: cannot munmap";
+  }
 
   return NULL;
 }
@@ -283,6 +308,8 @@ v4l2_open(value name, value width, value height)
   }
 
   t->start = start_mmap;
+  t->stop = stop_mmap;
+  t->done = done_mmap;
   t->get_frame = read_mmap;
 
   CAMLreturn((size_t) t);
@@ -297,11 +324,36 @@ v4l2_open(value name, value width, value height)
 }
 
 value
+v4l2_done(value t)
+{
+  CAMLparam1(t);
+  struct t* t_ = (struct t*) t;
+  char* msg = t_->done(t_);
+  close(t_->fd);
+  if (msg) {
+    caml_failwith(msg);
+  }
+  CAMLreturn(0);
+}
+
+value
 v4l2_start(value t)
 {
   CAMLparam1(t);
   struct t* t_ = (struct t*) t;
   char* msg = t_->start(t_);
+  if (msg) {
+    caml_failwith(msg);
+  }
+  CAMLreturn(0);
+}
+
+value
+v4l2_stop(value t)
+{
+  CAMLparam1(t);
+  struct t* t_ = (struct t*) t;
+  char* msg = t_->stop(t_);
   if (msg) {
     caml_failwith(msg);
   }

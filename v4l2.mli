@@ -6,6 +6,6 @@ val init : string -> config -> t
 
 val start : t -> unit
 
-val get_frame : t -> string
+val stop : t -> unit
 
-(* val destruct :  t -> unit *)
+val get_frame : t -> string
