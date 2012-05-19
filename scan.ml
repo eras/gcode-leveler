@@ -705,7 +705,7 @@ let main () =
   let samples = ref [] in
   let task = ref (fun _ -> ()) in
   let args = [("-sample", Arg.String (fun s -> samples := parse_sample_ofs s :: !samples), "Add a new sample in form filename=offset");
-	      ("-query", Arg.String (fun s -> task := (fun env -> query env s)), "Query the height of an image")] in
+	      ("-query", Arg.String (fun s -> let old_task = !task in task := (fun env -> old_task env; query env s)), "Query the height of an image")] in
     Arg.parse args (fun _ -> failwith "unknown argument") "scan - determine z offset from images";
     if List.length !samples = 0 
     then usage () 
