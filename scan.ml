@@ -715,7 +715,7 @@ let main () =
       let num_features = Array.length (fst training_data.(0)) in
 	assert (List.length angles = num_features);
 	debug "Number of features: %d\n%!" num_features;
-      let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:1000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
+      let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
 	Printf.printf "theta: ";
 	Array.iter (Printf.printf " %f") theta;
 	Printf.printf "\n";
