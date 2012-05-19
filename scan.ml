@@ -607,7 +607,7 @@ let analyze surface filename =
 
 let parse_sample_ofs str =
   try
-    match Pcre.extract ~full_match:false ~pat:"(.+)=([0-9.]+)" str with
+    match Pcre.extract ~full_match:false ~pat:"(.+)=([-0-9.]+)" str with
       | [|name; offset|] -> (name, float_of_string offset)
       | _ -> assert false
   with Not_found -> failwith "Invalid sample name. Must be of format filename=offset"
