@@ -12,8 +12,6 @@ type array_frame = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarra
 
 type rgb_array_frame = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
 
-type frame = < raw : string; decode : string >
-
 external v4l2_open : string -> int -> int -> t'c = "v4l2_open"
 
 external v4l2_done : t'c -> unit = "v4l2_done"
