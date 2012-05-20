@@ -348,13 +348,24 @@ v4l2_open(value name, value width, value height)
 
   struct v4l2_format fmt = { 0 };
   fmt.type                = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-  fmt.fmt.pix.width       = width; 
-  fmt.fmt.pix.height      = height;
+  fmt.fmt.pix.width       = Int_val(width); 
+  fmt.fmt.pix.height      = Int_val(height);
   fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_MJPEG;
   fmt.fmt.pix.field       = V4L2_FIELD_ANY;
 
   if (xioctl(fd, VIDIOC_S_FMT, &fmt) == -1) {
     msg = "v4l2_open: cannot setup video format";
+    goto cleanup;
+  }
+
+  if (xioctl(fd, VIDIOC_G_FMT, &fmt) == -1) {
+    msg = "v4l2_open: cannot retrieve video format";
+    goto cleanup;
+  }
+
+  if (fmt.fmt.pix.width != Int_val(width) ||
+      fmt.fmt.pix.height != Int_val(height)) {
+    msg = "v4l2_open: could not set desired size";
     goto cleanup;
   }
 
