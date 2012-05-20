@@ -364,8 +364,9 @@ v4l2_open(value name, value width, value height)
   }
 
   if (fmt.fmt.pix.width != Int_val(width) ||
-      fmt.fmt.pix.height != Int_val(height)) {
-    msg = "v4l2_open: could not set desired size";
+      fmt.fmt.pix.height != Int_val(height) ||
+      fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG) {
+    msg = "v4l2_open: could not set desired size or pixel format";
     goto cleanup;
   }
 
