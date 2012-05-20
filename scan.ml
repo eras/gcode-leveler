@@ -709,28 +709,36 @@ let map_features xs fs =
     (Array.map (fun (data, result) -> (mapping data, result)) xs,
      mapping)
 
+let scan _ =
+  failwith "not implemented"
+
+let analysis (queries, samples) =
+  if List.length samples = 0 
+  then usage ()
+  else
+    let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
+    let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) samples) in
+      (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
+    let extra_features = [|(fun x -> x ** 2.0)|] in
+    let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
+    let num_features = Array.length (fst training_data.(0)) in
+    let _ = Printf.printf "Number of features: %d\n%!" num_features in
+    let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
+    let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
+      Printf.printf "theta: ";
+      Array.iter (Printf.printf " %f") theta;
+      Printf.printf "\n";
+      List.iter (fun s -> query env s) (List.rev queries)
+
 let main () =
   let samples = ref [] in
   let queries = ref [] in
   let task = ref (fun _ -> ()) in
-  let args = [("-sample", Arg.String (fun s -> samples := parse_sample_ofs s :: !samples), "Add a new sample in form filename=offset");
-	      ("-query", Arg.String (fun s -> queries := s :: !queries), "Query the height of an image")] in
+  let args = [("-sample", Arg.String (fun s -> task := analysis; samples := parse_sample_ofs s :: !samples), "Add a new sample in form filename=offset");
+	      ("-query", Arg.String (fun s -> queries := s :: !queries), "Query the height of an image");
+	      ("-scan", Arg.Unit (fun () -> task := scan), "Set the automatic scan mode");
+	     ] in
     Arg.parse args (fun _ -> failwith "unknown argument") "scan - determine z offset from images";
-    if List.length !samples = 0 
-    then usage () 
-    else
-      let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
-      let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) !samples) in
-      (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
-      let extra_features = [|(fun x -> x ** 2.0)|] in
-      let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
-      let num_features = Array.length (fst training_data.(0)) in
-      let _ = Printf.printf "Number of features: %d\n%!" num_features in
-      let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
-      let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
-	Printf.printf "theta: ";
-	Array.iter (Printf.printf " %f") theta;
-	Printf.printf "\n";
-	List.iter (fun s -> query env s) (List.rev !queries)
+    !task (!queries, !samples)
 
 let _ = main ()
