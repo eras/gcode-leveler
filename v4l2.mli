@@ -2,7 +2,7 @@ include module type of V4l2config
 
 type t
 
-type frame = < raw : string >
+type frame = < raw : string; decode : string >
 
 val init : string -> config -> t
 

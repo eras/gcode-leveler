@@ -1,12 +1,18 @@
 include V4l2config
 
+open Bigarray
+
 type t'c
 type t = {
   t'c			: t'c;
   mutable started	: bool
 }
 
-type frame = < raw : string >
+type array_frame = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+type rgb_array_frame = (char, Bigarray.int8_unsigned_elt, Bigarray.c_layout) Bigarray.Array1.t
+
+type frame = < raw : string; decode : string >
 
 external v4l2_open : string -> int -> int -> t'c = "v4l2_open"
 
@@ -16,7 +22,9 @@ external v4l2_start : t'c -> unit = "v4l2_start"
 
 external v4l2_stop : t'c -> unit = "v4l2_stop"
 
-external v4l2_get_frame : t'c -> string = "v4l2_get_frame"
+external v4l2_get_frame : t'c -> array_frame = "v4l2_get_frame"
+
+external v4l2_decode_frame : array_frame -> rgb_array_frame = "v4l2_decode_frame"
 
 let destruct t =
   if t.started then v4l2_stop t.t'c;
@@ -47,6 +55,14 @@ let stop t =
     | false ->
 	()
 
+let string_of_bigarray array_frame =
+  let len = Array1.dim array_frame in
+  let s = String.create len in
+    for c = 0 to len - 1 do
+      String.set s c array_frame.{c}
+    done;
+    s
+
 let get_frame t = 
   let raw =
     match t.started with
@@ -59,6 +75,7 @@ let get_frame t =
 	  v4l2_get_frame t.t'c
   in
     (object
-       method raw = raw
+       method raw = string_of_bigarray raw
+       method decode = string_of_bigarray (v4l2_decode_frame raw)
      end)
 

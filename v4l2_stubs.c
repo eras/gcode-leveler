@@ -9,7 +9,9 @@
 #include <sys/mman.h>
 #include <assert.h>
 #include <string.h>
+#include <setjmp.h>
 
+#include <jpeglib.h>
 #include <linux/videodev2.h>
 
 #include <caml/mlvalues.h>
@@ -17,6 +19,7 @@
 #include <caml/alloc.h>
 #include <caml/custom.h>
 #include <caml/fail.h>
+#include <caml/bigarray.h>
 
 struct buffer {
   void*  start;
@@ -34,6 +37,60 @@ struct t {
   char*			(*stop)(struct t*);
   char*			(*done)(struct t*);
   value			(*get_frame)(struct t*, char** error);
+};
+
+static JHUFF_TBL dc_huff_tables[2] = {
+  { bits : { 0, 0, 1, 5, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0 },
+    huffval: { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } },
+  { bits : { 0, 0, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0 },
+    huffval : { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 } }
+};
+
+static JHUFF_TBL ac_huff_tables[2] = {
+  { bits : { 0, 0, 2, 1, 3, 3, 2, 4, 3, 5, 5, 4, 4, 0, 0, 1, 0x7d },
+    huffval : { 0x01, 0x02, 0x03, 0x00, 0x04, 0x11, 0x05, 0x12,
+		0x21, 0x31, 0x41, 0x06, 0x13, 0x51, 0x61, 0x07,
+		0x22, 0x71, 0x14, 0x32, 0x81, 0x91, 0xa1, 0x08,
+		0x23, 0x42, 0xb1, 0xc1, 0x15, 0x52, 0xd1, 0xf0,
+		0x24, 0x33, 0x62, 0x72, 0x82, 0x09, 0x0a, 0x16,
+		0x17, 0x18, 0x19, 0x1a, 0x25, 0x26, 0x27, 0x28,
+		0x29, 0x2a, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39,
+		0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49,
+		0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59,
+		0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69,
+		0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78, 0x79,
+		0x7a, 0x83, 0x84, 0x85, 0x86, 0x87, 0x88, 0x89,
+		0x8a, 0x92, 0x93, 0x94, 0x95, 0x96, 0x97, 0x98,
+		0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7,
+		0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4, 0xb5, 0xb6,
+		0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3, 0xc4, 0xc5,
+		0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2, 0xd3, 0xd4,
+		0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda, 0xe1, 0xe2,
+		0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9, 0xea,
+		0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+		0xf9, 0xfa } },
+  { bits : { 0, 0, 2, 1, 2, 4, 4, 3, 4, 7, 5, 4, 4, 0, 1, 2, 0x77 },
+    huffval : { 0x00, 0x01, 0x02, 0x03, 0x11, 0x04, 0x05, 0x21,
+		0x31, 0x06, 0x12, 0x41, 0x51, 0x07, 0x61, 0x71,
+		0x13, 0x22, 0x32, 0x81, 0x08, 0x14, 0x42, 0x91,
+		0xa1, 0xb1, 0xc1, 0x09, 0x23, 0x33, 0x52, 0xf0,
+		0x15, 0x62, 0x72, 0xd1, 0x0a, 0x16, 0x24, 0x34,
+		0xe1, 0x25, 0xf1, 0x17, 0x18, 0x19, 0x1a, 0x26,
+		0x27, 0x28, 0x29, 0x2a, 0x35, 0x36, 0x37, 0x38,
+		0x39, 0x3a, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48,
+		0x49, 0x4a, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58,
+		0x59, 0x5a, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68,
+		0x69, 0x6a, 0x73, 0x74, 0x75, 0x76, 0x77, 0x78,
+		0x79, 0x7a, 0x82, 0x83, 0x84, 0x85, 0x86, 0x87,
+		0x88, 0x89, 0x8a, 0x92, 0x93, 0x94, 0x95, 0x96,
+		0x97, 0x98, 0x99, 0x9a, 0xa2, 0xa3, 0xa4, 0xa5,
+		0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xb2, 0xb3, 0xb4,
+		0xb5, 0xb6, 0xb7, 0xb8, 0xb9, 0xba, 0xc2, 0xc3,
+		0xc4, 0xc5, 0xc6, 0xc7, 0xc8, 0xc9, 0xca, 0xd2,
+		0xd3, 0xd4, 0xd5, 0xd6, 0xd7, 0xd8, 0xd9, 0xda,
+		0xe2, 0xe3, 0xe4, 0xe5, 0xe6, 0xe7, 0xe8, 0xe9,
+		0xea, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8,
+		0xf9, 0xfa } },
 };
 
 static int
@@ -122,8 +179,9 @@ read_mmap(struct t* t, char** error)
 
   assert (buf.index < t->n_buffers);
 
-  result = caml_alloc_string(buf.bytesused);
-  memcpy(String_val(result), t->buffers[buf.index].start, buf.bytesused);
+  result = alloc_bigarray_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT, 1, 
+			       NULL, buf.bytesused);
+  memcpy((void*) Data_bigarray_val(result), t->buffers[buf.index].start, buf.bytesused);
 
   if (xioctl(t->fd, VIDIOC_QBUF, &buf) == -1)
     *error = "get_frame: cannot enqueue buffer";
@@ -321,6 +379,123 @@ v4l2_open(value name, value width, value height)
   free(t);
   caml_failwith(msg);
   return 0;
+}
+
+static void
+v4l2_jpeg_init_source(j_decompress_ptr dec)
+{
+  (void) dec;
+}
+
+static boolean
+v4l2_jpeg_fill_input_buffer(j_decompress_ptr dec)
+{
+  jpeg_abort_decompress(dec);
+  return 0;
+}
+
+static void
+v4l2_jpeg_skip_input_data(j_decompress_ptr dec, long ofs)
+{
+  dec->src->next_input_byte += ofs;
+}
+
+static boolean
+v4l2_jpeg_resync_to_restart(j_decompress_ptr dec, int ofs)
+{
+  (void) dec;
+  (void) ofs;
+  return 0;
+}
+
+static void
+v4l2_jpeg_term_source(j_decompress_ptr dec)
+{
+  (void) dec;
+}
+
+struct custom_jpeg_decompress_struct {
+  struct jpeg_decompress_struct jpeg;
+  jmp_buf decode_env;
+};
+
+static void
+v4l2_jpeg_error_exit(j_common_ptr cinfo)
+{
+  struct custom_jpeg_decompress_struct* custom_dec = (void*) cinfo;
+  longjmp(custom_dec->decode_env, 1);
+}
+
+value
+v4l2_decode_frame(value frame)
+{
+  CAMLparam1(frame);
+  CAMLlocal1(result);
+
+  struct jpeg_source_mgr src;
+  void* orig = Data_bigarray_val(frame);
+  src.next_input_byte	= orig;
+  src.bytes_in_buffer	= Caml_ba_array_val(frame)->dim[0];
+  src.init_source	= v4l2_jpeg_init_source;
+  src.fill_input_buffer = &v4l2_jpeg_fill_input_buffer;
+  src.skip_input_data	= &v4l2_jpeg_skip_input_data;
+  src.resync_to_restart	= &v4l2_jpeg_resync_to_restart;
+  src.term_source	= &v4l2_jpeg_term_source;
+
+  struct custom_jpeg_decompress_struct custom_dec = {
+    jpeg : { 0 }
+  };
+  struct jpeg_decompress_struct* dec = &custom_dec.jpeg;
+  jpeg_create_decompress(dec);
+  struct jpeg_error_mgr error;
+  dec->err = jpeg_std_error(&error);
+  dec->err->error_exit = &v4l2_jpeg_error_exit;
+  dec->src = &src;
+
+  if (setjmp(custom_dec.decode_env) == 0) {
+    jpeg_read_header(dec, TRUE);
+
+    dec->dc_huff_tbl_ptrs[0] = &dc_huff_tables[0];
+    dec->dc_huff_tbl_ptrs[1] = &dc_huff_tables[1];
+    dec->ac_huff_tbl_ptrs[0] = &ac_huff_tables[0];
+    dec->ac_huff_tbl_ptrs[1] = &ac_huff_tables[1];
+
+    jpeg_start_decompress(dec);
+
+    int size = dec->output_width * dec->output_height * 3;
+    int pitch = dec->output_width * 3;
+    result = alloc_bigarray_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT, 1,
+				 NULL, size);
+    JSAMPLE* begin = (void*) Data_bigarray_val(result);
+    JSAMPLE* buffer = begin;
+    const JSAMPLE* end = (void*) (((char*) Data_bigarray_val(result)) + size);
+
+    if (setjmp(custom_dec.decode_env) == 0) {
+      while (dec->output_scanline < dec->output_height) {
+	assert(buffer + pitch <= end);
+	jpeg_read_scanlines(dec, &buffer, 1);
+	buffer += pitch;
+      }
+      jpeg_finish_decompress(dec);
+    } else {
+      // uh oh. well, just keep on going and zero the rest.
+      printf("decoding error\n");
+      while (buffer < end) {
+	*buffer = 0;
+	++buffer;
+      }
+    }
+  } else {
+    // uh oh 2
+    printf("header decoding error\n");
+
+    result = alloc_bigarray_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT, 1,
+				 NULL, 0);
+  }
+
+  jpeg_destroy_decompress(dec);
+
+  CAMLreturn(result);
 }
 
 value
