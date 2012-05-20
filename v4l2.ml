@@ -6,6 +6,8 @@ type t = {
   mutable started	: bool
 }
 
+type frame = < raw : string >
+
 external v4l2_open : string -> int -> int -> t'c = "v4l2_open"
 
 external v4l2_done : t'c -> unit = "v4l2_done"
@@ -46,11 +48,17 @@ let stop t =
 	()
 
 let get_frame t = 
-  match t.started with
-    | false ->
-	v4l2_start t.t'c;
-	let image = v4l2_get_frame t.t'c in
-	  v4l2_stop t.t'c;
-	  image
-    | true ->
-	v4l2_get_frame t.t'c
+  let raw =
+    match t.started with
+      | false ->
+	  v4l2_start t.t'c;
+	  let image = v4l2_get_frame t.t'c in
+	    v4l2_stop t.t'c;
+	    image
+      | true ->
+	  v4l2_get_frame t.t'c
+  in
+    (object
+       method raw = raw
+     end)
+
