@@ -711,9 +711,10 @@ let map_features xs fs =
 
 let main () =
   let samples = ref [] in
+  let queries = ref [] in
   let task = ref (fun _ -> ()) in
   let args = [("-sample", Arg.String (fun s -> samples := parse_sample_ofs s :: !samples), "Add a new sample in form filename=offset");
-	      ("-query", Arg.String (fun s -> let old_task = !task in task := (fun env -> old_task env; query env s)), "Query the height of an image")] in
+	      ("-query", Arg.String (fun s -> queries := s :: !queries), "Query the height of an image")] in
     Arg.parse args (fun _ -> failwith "unknown argument") "scan - determine z offset from images";
     if List.length !samples = 0 
     then usage () 
@@ -726,10 +727,10 @@ let main () =
       let num_features = Array.length (fst training_data.(0)) in
       let _ = Printf.printf "Number of features: %d\n%!" num_features in
       let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
+      let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
 	Printf.printf "theta: ";
 	Array.iter (Printf.printf " %f") theta;
 	Printf.printf "\n";
-	!task (surface, angles, theta, (fun x -> normalize (generate_features x)));
-	()
+	List.iter (fun s -> query env s) (List.rev !queries)
 
 let _ = main ()
