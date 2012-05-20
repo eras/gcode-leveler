@@ -1,4 +1,4 @@
-include V4l2config
+include V4l2common
 
 open Bigarray
 

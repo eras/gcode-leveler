@@ -1,4 +1,4 @@
-include module type of V4l2config
+include module type of V4l2common
 
 type t
 
