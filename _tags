@@ -1,3 +1,5 @@
+<*>: debug
+
 <*>: package(pcre), package(batteries), dtypes, debug
 
 <v4l2_test.*>: use_v4l2
