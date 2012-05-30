@@ -561,7 +561,7 @@ let analyze surface filename =
 			      (0x00, 0x00, 0x00) 0xff));
 	Sdlvideo.update_rect surface
     in
-    let no_report _ _ = () in
+    let _no_report _ _ = () in
     let optimized =
       timing "optimize angles"
 	(BatList.filter_map
