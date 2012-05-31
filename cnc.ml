@@ -97,18 +97,12 @@ let reader (fd, state) =
 		   | str ->
 		       let handler =
 			 match handler with
-			   | None -> 
-			       Printf.printf "No handler\n%!";
-			       get_next_handler ()
+			   | None -> get_next_handler ()
 			   | Some handler -> Some handler
 		       in
 			 match handler with
-			   | None ->
-			       Printf.printf "Skipping\n%!";
-			       None
-			   | Some (Cont f, _finish) ->
-			       Printf.printf "Passing forward\n%!";
-			       Some (f str)
+			   | None -> None
+			   | Some (Cont f, _finish) -> Some (f str)
 	       in
 		 handler
 	    )
@@ -178,9 +172,8 @@ let foldl_response f v0 (respond : 'a -> unit) =
 (* actually this just retrieves the last string *)
 let single_string_response (respond : string -> unit) =
   let rec loop str = 
-    Printf.printf "Got a string! %s\n%!" str;
-    (Cont loop, fun () -> Printf.printf "Actual respond\n%!"; respond str) in
-    fun () -> (Cont loop, fun () -> Printf.printf "Default respond\n%!"; respond "")
+    (Cont loop, fun () -> respond str) in
+    fun () -> (Cont loop, fun () -> respond "")
 
 let home axis =
   send ("G28 " ^ String.concat " " (List.map (fun axis -> name_of_axis axis ^ "0") axis)) unit_response
@@ -249,7 +242,6 @@ let where =
 		let value = float_of_string (BatString.implode (List.rev digits)) in
 		  loop ((register, value)::collected) `WaitRegister
     in
-      Printf.printf "Processing string: %s\n%!" str;
     let regs = List.rev (loop [] `WaitRegister) in
       (List.assoc 'X' regs,
        List.assoc 'Y' regs,
