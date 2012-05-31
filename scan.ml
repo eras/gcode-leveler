@@ -709,8 +709,29 @@ let map_features xs fs =
     (Array.map (fun (data, result) -> (mapping data, result)) xs,
      mapping)
 
+let auto_acquire cnc ((x0, y0), (x1, y1)) (x_steps, y_steps) =
+  let w = x1 - x0 in
+  let h = y1 - y0 in
+    for xc = 0 to x_steps - 1 do
+      for yc = 0 to y_steps - 1 do
+	let x = x0 + int_of_float (float w /. float (x_steps - 1) *. float xc) in
+	let y = y0 + int_of_float (float h /. float (y_steps - 1) *. float yc) in
+	  Cnc.ignore cnc (Cnc.move [`X (float x); `Y (float y)])
+      done
+    done
+
 let scan _ =
-  failwith "not implemented"
+  let (bed_width, bed_height) = (180.0, 180.0) in
+  let cnc = Cnc.connect "/dev/ttyACM0" 115200 in
+    Unix.sleep 1;
+    (* Cnc.ignore cnc (Cnc.home [`X;`Y]); *)
+    (* Cnc.ignore cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]); *)
+    Cnc.wait cnc Cnc.motors_off;
+    let (x, y, z) = Cnc.wait cnc Cnc.where in
+      Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
+    ()
+    (* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
+    (* Unix.sleep 1 *)
 
 let analysis (queries, samples) =
   if List.length samples = 0 
