@@ -709,6 +709,9 @@ let map_features xs fs =
     (Array.map (fun (data, result) -> (mapping data, result)) xs,
      mapping)
 
+let wait_camera video =
+  for c = 1 to 8 do ignore (V4l2.get_frame video); done
+
 let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
   let w = x1 -. x0 in
   let h = y1 -. y0 in
@@ -724,10 +727,24 @@ let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	in
 	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
 	  Cnc.wait cnc Cnc.synchronize;
-	  for c = 1 to 8 do ignore (V4l2.get_frame video); done;
+	  wait_camera video;
 	  BatStd.output_file (Printf.sprintf "image-%d-%d.raw" xc yc) (V4l2.get_frame video)#decode
       done
     done
+
+let auto_calibrate cnc video max_deviation steps =
+  let (_, _, z) = Cnc.wait cnc Cnc.where in
+    Cnc.wait cnc (Cnc.set_position [`Z max_deviation]);
+    for step = 0 to steps - 1 do
+      let z_ofs = float step *. 2.0 *. max_deviation /. float (steps - 1) in
+	Printf.printf "step %d/%d z offset %f\n%!" (step + 1) steps z_ofs;
+	Cnc.wait cnc (Cnc.move [`Z z_ofs]);
+	Cnc.wait cnc Cnc.synchronize;
+	wait_camera video;
+	BatStd.output_file (Printf.sprintf "%+.2f.raw" (z_ofs -. max_deviation)) (V4l2.get_frame video)#decode
+    done;
+    Cnc.wait cnc (Cnc.move [`Z max_deviation]);
+    Cnc.wait cnc (Cnc.set_position [`Z z])
 
 let scan _ =
   let clearance_x = 30.0 in
@@ -742,8 +759,10 @@ let scan _ =
     let (x, y, z) = Cnc.wait cnc Cnc.where in
       Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
       Cnc.wait cnc (Cnc.set_step_speed 5000.0);
+      Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
+      auto_calibrate cnc video 1.0 9;
       auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
-      Cnc.wait cnc (Cnc.move [`X x; `Y y]);
+      Cnc.wait cnc (Cnc.move [`X x; `Y y; `Z z]);
       Cnc.wait cnc Cnc.motors_off
     (* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
     (* Unix.sleep 1 *)
