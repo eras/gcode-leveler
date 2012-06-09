@@ -731,9 +731,10 @@ let env_of_images surface samples =
       ) kernels;
     env
 
-let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
+let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
   let w = x1 -. x0 in
   let h = y1 -. y0 in
+  let results = Array.make_matrix x_steps y_steps None in
     for xc = 0 to x_steps - 1 do
       for yc = 0 to y_steps - 1 do
 	let odd = xc mod 2 = 0 in
@@ -747,9 +748,15 @@ let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
-	  BatStd.output_file (Printf.sprintf "image-%d-%d.raw" xc yc) (V4l2.get_frame video)#decode
+	  let frame = (V4l2.get_frame video)#decode in
+	    BatStd.output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
+	    results.(yc).(xc) <- Some (apply frame)
       done
-    done
+    done;
+    Array.init y_steps
+      (fun y ->
+	 Array.init x_steps (fun x -> BatOption.get results.(y).(x))
+      )
 
 let auto_calibrate surface cnc video dims max_deviation steps =
   let (_, _, z) = Cnc.wait cnc Cnc.where in
@@ -779,7 +786,7 @@ let scan _ =
   let clearance_x = 0.0 in
   let clearance_y = 0.0 in
   let dims = (640, 480) in
-  let (bed_width, bed_height) = (170.0 -. 40.0, 180.0 -. 30.0) in
+  let (bed_width, bed_height) = (120.0 -. 40.0, 180.0 -. 30.0) in
   let cnc = Cnc.connect "/dev/ttyACM0" 115200 in
   let video = V4l2.init "/dev/video0" { V4l2.width = fst dims; height = snd dims } in
   let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
@@ -794,8 +801,23 @@ let scan _ =
 	  Cnc.wait cnc (Cnc.set_step_speed 5000.0);
 	  Cnc.wait cnc (Cnc.set_acceleration [`X 50.0; `Y 50.0]);
 	  Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
-	  let _env = auto_calibrate surface cnc video dims 0.5 9 in
-	    auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
+	  let env = auto_calibrate surface cnc video dims 0.5 9 in
+	  let table =
+	    auto_acquire cnc video
+	      (fun frame -> query env (rgb24_of_string dims frame))
+	      ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y))
+	      (5, 5)
+	  in
+	    Printf.printf "Calibration table:\n";
+	    for y = Array.length table - 1 downto 0 do
+	      for x = 0 to Array.length table.(y) - 1 do
+		let v = table.(y).(x) in
+		  match classify_float v with
+		    | FP_subnormal | FP_zero | FP_normal -> Printf.printf "% .3f " v
+		    | FP_infinite | FP_nan -> Printf.printf "      "
+	      done;
+	      Printf.printf "\n"
+	    done
 	with exn ->
 	  Printf.printf "exception: %s\nbacktrace: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace ()) );
       Cnc.wait cnc (Cnc.move [`X x; `Y y; `Z z]);
