@@ -8,9 +8,13 @@ struct
   include Vector.Ops
 end
 
-type angle_offset = (float * float)
-
 type z_offset = float
+
+type angle = float
+
+type offset = float
+
+type angle_offset = (angle * offset)
 
 type vector = (float * float)
 
