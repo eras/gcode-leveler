@@ -766,6 +766,7 @@ let auto_calibrate surface cnc video dims max_deviation steps =
 	let rgb24 = (rgb24_of_string dims frame) in
 	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
 	  Sdlvideo.update_rect surface;
+	  BatStd.output_file (Printf.sprintf "%+.2f.raw" z_offset) frame;
 	  samples := (lazy rgb24, z_offset)::!samples;
     done;
     Cnc.wait cnc (Cnc.move [`Z max_deviation]);
