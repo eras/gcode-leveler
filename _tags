@@ -4,4 +4,4 @@
 
 <v4l2_test.*>: use_v4l2
 
-<scan.*>: package(camlimages.all_formats), package(sdl), package(sdl.sdlgfx)
+<scan.*>: package(camlimages.all_formats), package(sdl), package(sdl.sdlgfx), use_v4l2

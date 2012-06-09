@@ -709,27 +709,42 @@ let map_features xs fs =
     (Array.map (fun (data, result) -> (mapping data, result)) xs,
      mapping)
 
-let auto_acquire cnc ((x0, y0), (x1, y1)) (x_steps, y_steps) =
-  let w = x1 - x0 in
-  let h = y1 - y0 in
+let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
+  let w = x1 -. x0 in
+  let h = y1 -. y0 in
     for xc = 0 to x_steps - 1 do
       for yc = 0 to y_steps - 1 do
-	let x = x0 + int_of_float (float w /. float (x_steps - 1) *. float xc) in
-	let y = y0 + int_of_float (float h /. float (y_steps - 1) *. float yc) in
-	  Cnc.ignore cnc (Cnc.move [`X (float x); `Y (float y)])
+	let odd = xc mod 2 = 0 in
+	let x = x0 +. (w /. float (x_steps - 1) *. float xc) in
+	let y =
+	  let distance = h /. float (y_steps - 1) *. float yc in
+	  if odd
+	  then y0 +. distance
+	  else y1 -. distance
+	in
+	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
+	  Cnc.wait cnc Cnc.synchronize;
+	  for c = 1 to 8 do ignore (V4l2.get_frame video); done;
+	  BatStd.output_file (Printf.sprintf "image-%d-%d.raw" xc yc) (V4l2.get_frame video)#decode
       done
     done
 
 let scan _ =
+  let clearance_x = 30.0 in
+  let clearance_y = 30.0 in
   let (bed_width, bed_height) = (180.0, 180.0) in
   let cnc = Cnc.connect "/dev/ttyACM0" 115200 in
+  let video = V4l2.init "/dev/video0" { V4l2.width = 640; height = 480 } in
     Unix.sleep 1;
     (* Cnc.ignore cnc (Cnc.home [`X;`Y]); *)
     (* Cnc.ignore cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]); *)
     Cnc.wait cnc Cnc.motors_off;
     let (x, y, z) = Cnc.wait cnc Cnc.where in
       Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
-    ()
+      Cnc.wait cnc (Cnc.set_step_speed 5000.0);
+      auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
+      Cnc.wait cnc (Cnc.move [`X x; `Y y]);
+      Cnc.wait cnc Cnc.motors_off
     (* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
     (* Unix.sleep 1 *)
 
