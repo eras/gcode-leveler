@@ -194,6 +194,8 @@ let move axis = send ("G1 " ^ string_of_axis axis) unit_response
       
 let set_position axis = send ("G92 " ^ string_of_axis axis) unit_response
 
+let set_acceleration axis = send ("M201 " ^ string_of_axis axis) unit_response
+
 let wrap_response input output =
   fun respond ->
     input (fun msg -> respond (output msg))
