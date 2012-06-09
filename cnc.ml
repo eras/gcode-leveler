@@ -254,6 +254,9 @@ let where =
 let motors_off =
   send "M84" unit_response
 
+let synchronize =
+  send "M400" unit_response
+
 let async t (request : 'a request) (callback : 'a -> unit) =
   let (issue, handler) = request () in
   let handler = handler callback in

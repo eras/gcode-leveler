@@ -8,6 +8,7 @@ val move : [< `X of float | `Y of float | `Z of float ] list -> unit request
 val set_step_speed : float -> unit request
 val where : (float * float * float) request
 val motors_off : unit request
+val synchronize : unit request
 
 val wait : t -> 'a request -> 'a
 val ignore : t -> 'a request -> unit
