@@ -673,9 +673,8 @@ let analyze_data (data : (z_offset * angle_offset list) list) =
 
 let deg_of_rad rad = rad /. pi *. 180.0
 
-let query (surface, kernels) filename =
-  Printf.printf "Quering offset from %s\n%!" filename;
-  let aos = analyze surface (rgb24_of_file filename) in
+let query (surface, kernels) rgb24 =
+  let aos = analyze surface rgb24 in
   let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
   let z_offsets =
     BatList.filter_map
@@ -696,7 +695,8 @@ let query (surface, kernels) filename =
   in
   let z_offset = Utils.average_list z_offsets in
     Printf.printf "z-offsets: %s\n" (String.concat " " (List.map string_of_float z_offsets));
-    Printf.printf "z-offset: %f\n" z_offset
+    Printf.printf "z-offset: %f\n" z_offset;
+    z_offset
 
 let map_features xs fs =
   let mapping row =
@@ -809,7 +809,9 @@ let analysis (queries, samples) =
   else
     let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
     let env = env_of_images surface (List.map (fun (filename, offset) -> (lazy (rgb24_of_file filename), offset)) samples) in
-      List.iter (fun s -> query env s) (List.rev queries)
+      List.iter (fun filename ->
+		   Printf.printf "Quering offset from %s\n%!" filename;
+		   ignore (query env (rgb24_of_file filename))) (List.rev queries)
 
 let main () =
   let samples = ref [] in
