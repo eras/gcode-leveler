@@ -5,6 +5,7 @@ val connect : string -> int -> t
 val name_of_axis : [< `X | `Y | `Z ] -> string
 val home : [< `X | `Y | `Z ] list -> unit request
 val move : [< `X of float | `Y of float | `Z of float ] list -> unit request
+val set_step_speed : float -> unit request
 val where : (float * float * float) request
 val motors_off : unit request
 

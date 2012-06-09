@@ -178,6 +178,8 @@ let single_string_response (respond : string -> unit) =
 let home axis =
   send ("G28 " ^ String.concat " " (List.map (fun axis -> name_of_axis axis ^ "0") axis)) unit_response
 
+let set_step_speed speed = send ("G1 F" ^ string_of_float speed) unit_response
+
 let move axis =
   let movements = 
     axis 
