@@ -28,6 +28,12 @@ let y_of_vec ((x, y) : vector) = y
 
 let ab_length (a, b) = int_of_float (Vector.(length (a -| b)))
 
+let dup a = (a, a)
+
+let project1st f (a, b) = (f a, b)
+
+let project2nd f (a, b) = (a, f b)
+
 let incr_wrap max x =
   incr x;
   if !x >= max then
