@@ -3,6 +3,7 @@ type 'a request
 type t
 val connect : string -> int -> t
 val name_of_axis : [< `X | `Y | `Z ] -> string
+val set_position : [< `X of float | `Y of float | `Z of float ] list -> unit request
 val home : [< `X | `Y | `Z ] list -> unit request
 val move : [< `X of float | `Y of float | `Z of float ] list -> unit request
 val set_step_speed : float -> unit request

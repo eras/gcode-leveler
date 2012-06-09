@@ -180,17 +180,19 @@ let home axis =
 
 let set_step_speed speed = send ("G1 F" ^ string_of_float speed) unit_response
 
-let move axis =
-  let movements = 
-    axis 
+let string_of_axis axis =
+  axis 
   |> List.map (function
 		 | `X x -> "X", x
 		 | `Y y -> "Y", y
 		 | `Z z -> "Z", z
 	      ) 
   |> List.map (uncurry (Printf.sprintf "%s%.3f"))
-  in
-    send ("G1 " ^ String.concat " " movements) unit_response
+  |> String.concat " "
+
+let move axis = send ("G1 " ^ string_of_axis axis) unit_response
+      
+let set_position axis = send ("G92 " ^ string_of_axis axis) unit_response
 
 let wrap_response input output =
   fun respond ->
