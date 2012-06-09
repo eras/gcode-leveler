@@ -679,7 +679,7 @@ let query (surface, kernels) filename =
   let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
   let z_offsets =
     BatList.filter_map
-      (fun (angle, (theta, normalize)) ->
+      (fun (angle, kernel) ->
 	 Printf.printf "angle: %f\n%!" (deg_of_rad angle);
 	 let offsets = Array.of_list (BatList.filter_map (fun (angle', offset) ->
 							    if similar_angle angle angle'
@@ -687,7 +687,9 @@ let query (surface, kernels) filename =
 							    else None) aos) in
 	 let _ = Printf.printf "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
 	   if Array.length offsets > 0
-	   then Some (Optimize.linreg_hypo (normalize [|Array.fold_left min offsets.(0) offsets|]) theta)
+	   then Some (Optimize.linreg_hypo
+			(kernel.Optimize.lr_normalize [|Array.fold_left min offsets.(0) offsets|])
+			kernel.Optimize.lr_theta)
 	   else None
       )
       kernels
@@ -710,14 +712,11 @@ let wait_camera video =
 let learn_angle (offsets : (z_offset * offset) list) =
   let num_features = 1 in
   let training_data = Array.map (fun (z_offset, offset) -> ([|offset|], z_offset)) (Array.of_list offsets) in
-  let (theta, normalize) =
     Optimize.linreg
       ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001
       0.001
       (Array.make (num_features + 1) 0.0)
       training_data
-  in
-    (theta, normalize)
 
 let env_of_images surface samples =
   let angle_offsets = analyze_data (List.map (fun (data, offset) -> (offset, analyze surface (Lazy.force data))) samples) in
@@ -725,7 +724,7 @@ let env_of_images surface samples =
   let kernels = List.map (project2nd learn_angle) angle_offsets in
   let env = (surface, kernels) in
     List.iter
-      (fun (angle, (theta, _normalize)) ->
+      (fun (angle, { Optimize.lr_theta = theta }) ->
 	 Printf.printf "angle %f theta:" (angle /. pi *. 180.0);
 	 Array.iter (Printf.printf " %f") theta;
 	 Printf.printf "\n";

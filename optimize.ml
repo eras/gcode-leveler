@@ -1,6 +1,11 @@
 open BatPervasives
 open Utils
 
+type linreg_kernel = {
+  lr_theta	: float array;
+  lr_normalize	: float array -> float array;
+}
+
 (* this is not gradient descent by itself, it depends
    on the cost and step functions *)
 let optimize ?max_steps ?(min_steps=0) ~epsilon (x0:'a) (cost:'a -> float) (step:int -> 'a -> 'a) =
@@ -92,6 +97,7 @@ let linreg ?max_steps ?min_steps ~epsilon alpha theta0 training =
 	)
     in
     let normalize_row xs'row = BatArray.map2 (fun (n, _n') x -> n x) ns xs'row in
-      (theta, normalize_row)
+      { lr_theta = theta;
+	lr_normalize = normalize_row }
       
 
