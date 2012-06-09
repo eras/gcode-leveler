@@ -229,6 +229,13 @@ let rgb24_of_file filename =
     | Images.Rgb24 x -> x
     | _ -> failwith "Unsupported bitmap type"
 
+let rgb24_of_string (width, height) string = 
+  let bytes_per_line = width * 3 in
+    Rgb24.create_with_scanlines
+      width height
+      Info.([Info_Depth 24; Info_ColorModel RGB])
+      (Array.init height (fun y -> String.sub string (y * bytes_per_line) bytes_per_line))
+
 let gray8_of_rgb24 rgb24 =
   let (h, w) = Rgb24.(rgb24.height, rgb24.width) in
   let g = Index8.create w h in
@@ -491,8 +498,7 @@ let compress_consecutive_lines aos =
 	(a'offset +. b'offset) /. 2.0))
     (List.sort compare aos)
 
-let analyze surface filename =
-  let rgb24 = rgb24_of_file filename in
+let analyze surface rgb24 =
   let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
   let image'low = part 0.5 (array_of_image image_dims image) in
@@ -694,7 +700,7 @@ let analyze_data (data : (z_offset * angle_offset list) list) =
 
 let query (surface, angles, theta, normalize) filename =
   let _ = debug "angles: %s\n%!" (String.concat " " (List.map string_of_float angles)) in
-  let aos = analyze surface filename in
+  let aos = analyze surface (rgb24_of_file filename) in
   let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
   let offsets = Array.of_list (List.map (fun angle -> snd (List.find (fun (angle', _offset) -> similar_angle angle angle') aos)) angles) in
   let _ = debug "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
@@ -711,6 +717,20 @@ let map_features xs fs =
 
 let wait_camera video =
   for c = 1 to 8 do ignore (V4l2.get_frame video); done
+
+let env_of_images surface samples =
+  let (angles, training_data) = analyze_data (List.map (fun (data, offset) -> (offset, analyze surface (Lazy.force data))) samples) in
+    (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
+  let extra_features = [|(fun x -> x ** 2.0)|] in
+  let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
+  let num_features = Array.length (fst training_data.(0)) in
+  let _ = Printf.printf "Number of features: %d\n%!" num_features in
+  let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
+  let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
+    Printf.printf "theta: ";
+    Array.iter (Printf.printf " %f") theta;
+    Printf.printf "\n";
+    env
 
 let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
   let w = x1 -. x0 in
@@ -732,57 +752,63 @@ let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
       done
     done
 
-let auto_calibrate cnc video max_deviation steps =
+let auto_calibrate surface cnc video dims max_deviation steps =
   let (_, _, z) = Cnc.wait cnc Cnc.where in
+  let samples = ref [] in
     Cnc.wait cnc (Cnc.set_position [`Z max_deviation]);
     for step = 0 to steps - 1 do
-      let z_ofs = float step *. 2.0 *. max_deviation /. float (steps - 1) in
-	Printf.printf "step %d/%d z offset %f\n%!" (step + 1) steps z_ofs;
-	Cnc.wait cnc (Cnc.move [`Z z_ofs]);
+      let z_offset = float step *. 2.0 *. max_deviation /. float (steps - 1) -. max_deviation in
+	Printf.printf "step %d/%d z offset %f\n%!" (step + 1) steps z_offset;
+	Cnc.wait cnc (Cnc.move [`Z (z_offset +. max_deviation)]);
 	Cnc.wait cnc Cnc.synchronize;
 	wait_camera video;
-	BatStd.output_file (Printf.sprintf "%+.2f.raw" (z_ofs -. max_deviation)) (V4l2.get_frame video)#decode
+	let frame = (V4l2.get_frame video)#decode in
+	let rgb24 = (rgb24_of_string dims frame) in
+	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
+	  Sdlvideo.update_rect surface;
+	  samples := (lazy rgb24, z_offset)::!samples;
     done;
     Cnc.wait cnc (Cnc.move [`Z max_deviation]);
-    Cnc.wait cnc (Cnc.set_position [`Z z])
+    Cnc.wait cnc (Cnc.set_position [`Z z]);
+    Cnc.wait cnc Cnc.motors_off;
+    env_of_images surface !samples
 
 let scan _ =
-  let clearance_x = 30.0 in
-  let clearance_y = 30.0 in
-  let (bed_width, bed_height) = (180.0, 180.0) in
+  (* let clearance_x = 40.0 in *)
+  (* let clearance_y = 30.0 in *)
+  let clearance_x = 0.0 in
+  let clearance_y = 0.0 in
+  let dims = (640, 480) in
+  let (bed_width, bed_height) = (170.0 -. 40.0, 180.0 -. 30.0) in
   let cnc = Cnc.connect "/dev/ttyACM0" 115200 in
-  let video = V4l2.init "/dev/video0" { V4l2.width = 640; height = 480 } in
+  let video = V4l2.init "/dev/video0" { V4l2.width = fst dims; height = snd dims } in
+  let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
+    Sys.catch_break true;
     Unix.sleep 1;
     (* Cnc.ignore cnc (Cnc.home [`X;`Y]); *)
     (* Cnc.ignore cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]); *)
     Cnc.wait cnc Cnc.motors_off;
     let (x, y, z) = Cnc.wait cnc Cnc.where in
       Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
-      Cnc.wait cnc (Cnc.set_step_speed 5000.0);
-      Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
-      auto_calibrate cnc video 1.0 9;
-      auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
+      ( try
+	  Cnc.wait cnc (Cnc.set_step_speed 5000.0);
+	  Cnc.wait cnc (Cnc.set_acceleration [`X 50.0; `Y 50.0]);
+	  Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
+	  let env = auto_calibrate surface cnc video dims 0.5 9 in
+	    auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
+	with exn ->
+	  Printf.printf "exception: %s\nbacktrace: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace ()) );
       Cnc.wait cnc (Cnc.move [`X x; `Y y; `Z z]);
       Cnc.wait cnc Cnc.motors_off
-    (* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
-    (* Unix.sleep 1 *)
-
+	(* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
+	(* Unix.sleep 1 *)
+  
 let analysis (queries, samples) =
   if List.length samples = 0 
   then usage ()
   else
     let surface = Sdlvideo.set_video_mode ~w:640 ~h:480 ~bpp:24 [] in
-    let (angles, training_data) = analyze_data (List.map (fun (filename, offset) -> (offset, analyze surface filename)) samples) in
-      (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
-    let extra_features = [|(fun x -> x ** 2.0)|] in
-    let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
-    let num_features = Array.length (fst training_data.(0)) in
-    let _ = Printf.printf "Number of features: %d\n%!" num_features in
-    let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
-    let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
-      Printf.printf "theta: ";
-      Array.iter (Printf.printf " %f") theta;
-      Printf.printf "\n";
+    let env = env_of_images surface (List.map (fun (filename, offset) -> (lazy (rgb24_of_file filename), offset)) samples) in
       List.iter (fun s -> query env s) (List.rev queries)
 
 let main () =
