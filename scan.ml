@@ -640,82 +640,61 @@ let rec transpose list = match list with
 
 let similar_angle a b = abs_float (a -. b) < (10.0 /. 180.0 *. pi)
 
-let analyze_data (data : (z_offset * angle_offset list) list) =
+let offsets_of_angle data base_angle =
   let similar_angle_offset base_angle (angle, _offset) = similar_angle base_angle angle in
-  let angles = 
-    compress_consecutive 
+    BatList.filter_map
+      (fun (z_offset, aos) ->
+	 match BatList.Exceptionless.find (similar_angle_offset base_angle) aos with
+	   | None -> None
+	   | Some (_, offset) -> Some (z_offset, offset))
+      data
+
+let analyze_data (data : (z_offset * angle_offset list) list) =
+  let angles =
+    compress_consecutive
       similar_angle
       (fun a b -> (a +. b) /. 2.0)
       (List.sort compare **>
 	 List.map fst (List.concat (List.map snd data)))
   in
-  let angle_data = 
-    BatList.filter_map
-      (fun base_angle ->
-	 let offsets = 
-	   BatList.mapi
-	     (fun index (z_offset, aos) -> 
-		(index, 
-		 match BatList.Exceptionless.find (similar_angle_offset base_angle) aos with
-		   | None -> None
-		   | Some (_, offset) -> Some offset))
-	     data
-	 in
-	   if List.exists (function (_index, None) -> true | _ -> false) offsets 
-	   then None
-	   else Some (base_angle, List.map (fun (index, ofs) -> (index, BatOption.get ofs)) offsets)
-      )
-      angles
-  in
-  let training_data =
-    let index_offsets = List.map snd angle_data in
-    let index_offsets = transpose index_offsets in
-    let offsets = 
-      List.map 
-	(fun ix_ofs -> 
-	   let index = fst (List.hd ix_ofs) in
-	   let z_offset = fst (List.nth data index) in
-	     (Array.of_list (List.map snd ix_ofs), z_offset)
-	)
-	index_offsets
-    in
-      Array.of_list offsets
-  in
-    (* assert (let n = List.length (snd (List.hd angle_data)) in *)
-    (* 	      List.for_all (fun (_z_offset, offsets) -> List.length offsets = n) angle_data); *)
-    Printf.printf "angle data\n";
+  let angle_zofsofs = List.map (fun angle -> (angle, offsets_of_angle data angle)) angles in
+    Printf.printf "training data\n";
     List.iter
-      (fun (angle, data) ->
+      (fun (angle, offsets) ->
 	 Printf.printf "angle: %f\n" (angle /. pi *. 180.0);
-	 List.iter
-	   (fun (index, offset) ->
-	      Printf.printf "  index: %d offset: %f\n" index offset;
-	   )
-	   data
+	 List.iter (fun (z_offset, offset) -> Printf.printf "  z-offset: %f offset: %f\n" z_offset offset) offsets
       )
-      angle_data;
-    debug "training data\n";
-    Array.iter
-      (fun (offsets, z_ofs) ->
-	 debug "%f:" z_ofs;
-	 Array.iter (debug " %f") offsets;
-	 debug "\n";
-      )
-      training_data;
-    (List.map fst angle_data, training_data)
+      angle_zofsofs;
+    angle_zofsofs
 
 (* angles: -2.81137104215 0.334435358196 2.18057844162 2.80557972733 3.05623971742 *)
 (* aos: (-2.807649,118.332092) (0.334435,-118.207293) (2.176905,28.918486) (2.807629,48.072728) (3.059995,82.298368) *)
 (* offsets: 118.332091728 -118.207292594 28.9184862267 48.072727735 82.2983682201 *)
 
-let query (surface, angles, theta, normalize) filename =
-  let _ = debug "angles: %s\n%!" (String.concat " " (List.map string_of_float angles)) in
+let deg_of_rad rad = rad /. pi *. 180.0
+
+let query (surface, kernels) filename =
+  Printf.printf "Quering offset from %s\n%!" filename;
   let aos = analyze surface (rgb24_of_file filename) in
   let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
-  let offsets = Array.of_list (List.map (fun angle -> snd (List.find (fun (angle', _offset) -> similar_angle angle angle') aos)) angles) in
-  let _ = debug "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
-  let offset = Optimize.linreg_hypo (normalize offsets) theta in
-    Printf.printf "%s offset %f\n%!" filename offset
+  let z_offsets =
+    BatList.filter_map
+      (fun (angle, (theta, normalize)) ->
+	 Printf.printf "angle: %f\n%!" (deg_of_rad angle);
+	 let offsets = Array.of_list (BatList.filter_map (fun (angle', offset) ->
+							    if similar_angle angle angle'
+							    then Some offset
+							    else None) aos) in
+	 let _ = Printf.printf "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
+	   if Array.length offsets > 0
+	   then Some (Optimize.linreg_hypo (normalize [|Array.fold_left min offsets.(0) offsets|]) theta)
+	   else None
+      )
+      kernels
+  in
+  let z_offset = Utils.average_list z_offsets in
+    Printf.printf "z-offsets: %s\n" (String.concat " " (List.map string_of_float z_offsets));
+    Printf.printf "z-offset: %f\n" z_offset
 
 let map_features xs fs =
   let mapping row =
@@ -728,18 +707,29 @@ let map_features xs fs =
 let wait_camera video =
   for c = 1 to 8 do ignore (V4l2.get_frame video); done
 
+let learn_angle (offsets : (z_offset * offset) list) =
+  let num_features = 1 in
+  let training_data = Array.map (fun (z_offset, offset) -> ([|offset|], z_offset)) (Array.of_list offsets) in
+  let (theta, normalize) =
+    Optimize.linreg
+      ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001
+      0.001
+      (Array.make (num_features + 1) 0.0)
+      training_data
+  in
+    (theta, normalize)
+
 let env_of_images surface samples =
-  let (angles, training_data) = analyze_data (List.map (fun (data, offset) -> (offset, analyze surface (Lazy.force data))) samples) in
+  let angle_offsets = analyze_data (List.map (fun (data, offset) -> (offset, analyze surface (Lazy.force data))) samples) in
     (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
-  let extra_features = [|(fun x -> x ** 2.0)|] in
-  let (training_data, generate_features) = map_features training_data (Array.concat [[|(fun x -> x)|]; extra_features]) in
-  let num_features = Array.length (fst training_data.(0)) in
-  let _ = Printf.printf "Number of features: %d\n%!" num_features in
-  let (theta, normalize) = Optimize.linreg ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001 0.001 (Array.make (num_features + 1) 0.0) training_data in
-  let env = (surface, angles, theta, (fun x -> normalize (generate_features x))) in
-    Printf.printf "theta: ";
-    Array.iter (Printf.printf " %f") theta;
-    Printf.printf "\n";
+  let kernels = List.map (project2nd learn_angle) angle_offsets in
+  let env = (surface, kernels) in
+    List.iter
+      (fun (angle, (theta, _normalize)) ->
+	 Printf.printf "angle %f theta:" (angle /. pi *. 180.0);
+	 Array.iter (Printf.printf " %f") theta;
+	 Printf.printf "\n";
+      ) kernels;
     env
 
 let auto_acquire cnc video ((x0, y0), (x1, y1)) (x_steps, y_steps) =
@@ -805,7 +795,7 @@ let scan _ =
 	  Cnc.wait cnc (Cnc.set_step_speed 5000.0);
 	  Cnc.wait cnc (Cnc.set_acceleration [`X 50.0; `Y 50.0]);
 	  Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
-	  let env = auto_calibrate surface cnc video dims 0.5 9 in
+	  let _env = auto_calibrate surface cnc video dims 0.5 9 in
 	    auto_acquire cnc video ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y)) (3, 3);
 	with exn ->
 	  Printf.printf "exception: %s\nbacktrace: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace ()) );
