@@ -244,6 +244,7 @@ void main() {
     ignore(glutCreateWindow ~title:"Surface");
     let context = program_init () in
     glutDisplayFunc ~display:(display_mesh context);
+    glutReshapeFunc ~reshape:reshape;
     (* glutIdleFunc ~idle:glutPostRedisplay; *)
     glutIdleFunc ~idle:(display_mesh context);
     ()
