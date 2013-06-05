@@ -200,8 +200,7 @@ struct
 
   let program_init () =
     let vertexShaderSrc = "
-#version 130
-in vec3 VertexPosition;
+#version 120
 invariant gl_Position;
 
 void main() {
@@ -210,8 +209,7 @@ void main() {
 }
 " in
     let fragmentShaderSrc = "
-#version 130
-precision highp float;
+#version 120
 void main() {
 //  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
   gl_FragColor = vec4(gl_Color.xyz, 0.5);
