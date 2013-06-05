@@ -87,17 +87,78 @@ struct
     ) xs;
     ps
 
-  let vertices = 
-    ar_of_array3
-      [| 0.0,  0.0, 2.1;
- 	 1.0,  0.0, 2.1;
-	 0.0,  1.0, 2.1|]
+  let make_grid f scale width height =
+    let size = width * height in 
+    let ar = Bigarray.(Array1.create float32 c_layout (2 * 3 * 3 * size)) in
+    for x = 0 to width - 1 do
+      for y = 0 to height - 1 do
+	let i = 2 * 3 * 3 * (x + y * width) in
+	let set_at i x y =
+	  let x' = (float x /. float (width - 1)) in
+	  let y' = (float y /. float (height - 1)) in
+	  Bigarray.Array1.(
+	    set ar (i + 0) (scale *. x');
+	    set ar (i + 1) (scale *. y');
+	    set ar (i + 2) (f x' y');
+	  )
+	in
+	set_at (i +  0) (x + 0) (y + 0);
+	set_at (i +  3) (x + 0) (y + 1);
+	set_at (i +  6) (x + 1) (y + 0);
+	set_at (i +  9) (x + 0) (y + 1);
+	set_at (i + 12) (x + 1) (y + 1);
+	set_at (i + 15) (x + 1) (y + 0);
+      done
+    done;
+    ar    
 
-  let colors = 
+  let make_rgb_grid f width height =
+    let size = width * height in 
+    let ar = Bigarray.(Array1.create float32 c_layout (2 * 3 * 3 * size)) in
+    for x = 0 to width - 1 do
+      for y = 0 to height - 1 do
+	let i = 2 * 3 * 3 * (x + y * width) in
+	let set_at i x y =
+	  let (r, g, b) = (f (float x /. float (width - 1)) (float y /. float (height - 1))) in
+	  Bigarray.Array1.(
+	    set ar (i + 0) r;
+	    set ar (i + 1) g;
+	    set ar (i + 2) b;
+	  )
+	in
+	set_at (i +  0) (x + 0) (y + 0);
+	set_at (i +  3) (x + 0) (y + 1);
+	set_at (i +  6) (x + 1) (y + 0);
+	set_at (i +  9) (x + 0) (y + 1);
+	set_at (i + 12) (x + 1) (y + 1);
+	set_at (i + 15) (x + 1) (y + 0);
+      done
+    done;
+    ar    
+
+  let vertices =
+    ar_of_array3
+      [| 0.0,  0.0, 0.0;
+  	 1.0,  0.0, 0.0;
+  	 0.0,  1.0, 0.0|]
+
+  let colors =
     ar_of_array3
       [| 0.0,  0.0, 1.0;
- 	 1.0,  0.0, 0.0;
-	 0.0,  1.0, 0.0|]
+  	 1.0,  0.0, 0.0;
+  	 0.0,  1.0, 0.0|]
+
+  let pi = atan 1.0 *. 4.0
+
+  let grid_width, grid_heigth = 100, 100
+  let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth
+  let colors = make_rgb_grid (fun x y -> ((if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0),
+					  (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0),
+					  0.0)) grid_width grid_heigth
+  (* let colors = ar_of_array3 (Array.make (10 * 30) (1.0, 1.0, 1.0)) *)
+
+  (* let colors = ar_of_array3 (Array.make (10 * 10 * 2) (1.0, 1.0, 1.0)) *)
+
 
   let time = time_counter ()
 
@@ -116,19 +177,21 @@ struct
     let open VertArray in
     (* Printf.printf "%.2f fps\n%!" (count_fps ()); *)
 
-    set_camera 0. 0. (-1.0 -. time ())  0. 0. (0.);
+    set_camera 0. (3.0) 20.0  0. 0. (0.);
 
     glMatrixMode GL_MODELVIEW;
     glPushMatrix ();
-    glTranslate 0.0 0.0 (-2.0);
+    glRotate (30.0 *. time ()) 0.0 1.0 0.0;
+    glRotate (-90.0) 1.0 0.0 0.0;
     glClearColor 0.5 0.5 0.5 1.0;
     glClear [GL_COLOR_BUFFER_BIT; GL_DEPTH_BUFFER_BIT];
 
     glEnableClientState GL_VERTEX_ARRAY;
     glEnableClientState GL_COLOR_ARRAY;
     glVertexPointer 3 Coord.GL_FLOAT 0 vertices;
-    glColorPointer 3  Color.GL_FLOAT 0 colors;
-    glDrawArrays ~mode:GL_TRIANGLES ~first:0 ~count:3;
+    glColorPointer 3 Color.GL_FLOAT 0 colors;
+    glTranslate (-5.0) (-5.0) 0.0;
+    glDrawArrays ~mode:GL_TRIANGLES ~first:0 ~count:(Bigarray.Array1.dim vertices / 3);
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState GL_COLOR_ARRAY;
 
@@ -160,9 +223,8 @@ void main() {
     let context = glCreateProgram () in
     glShaderSource vertexShader vertexShaderSrc;
     glShaderSource fragmentShader fragmentShaderSrc;
-    glCompileShader fragmentShader;
-    glCompileShader vertexShader;
     let compileShader label shader =
+      glCompileShader shader;
       if not (glGetShaderCompileStatus shader) then
 	failwith (label ^ ": " ^ glGetShaderInfoLog shader)
     in
@@ -190,19 +252,20 @@ void main() {
 
   let init_OpenGL ~width ~height =
     let open GL in
-    glDisable GL_DEPTH_TEST;
+    glEnable GL_DEPTH_TEST;
     glPolygonMode GL_FRONT GL_FILL;
-    glFrontFace GL_CCW;    (* assume a clean model *)
-    glDisable GL_CULL_FACE; (* deactivate elimination of polygons *)
-    glCullFace GL_BACK;    (* remove back side of polygons *)
+    (* glPolygonMode GL_FRONT GL_LINE; *)
+    glFrontFace GL_CCW;
+    glDisable GL_CULL_FACE;
+    glCullFace GL_BACK;
     ()
 
   let glut_run () =
     let (width, height) = (1024, 1024) in
-    init_OpenGL ~width ~height;
     glut_init ~width ~height;
     reshape ~width ~height;
     Printf.printf "Enter\n%!";
+    init_OpenGL ~width ~height;
     Glut.glutMainLoop ();
     Printf.printf "Leave\n%!";
     ()

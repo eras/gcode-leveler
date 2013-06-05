@@ -1,6 +1,8 @@
 <*>: debug, thread
 
-<*>: package(pcre), package(batteries), dtypes, debug
+<*>: package(pcre), package(batteries), package(ocamlgraph), dtypes, debug
+
+<surface.*>: package(glMLite), package(glMLite.glut), package(glMLite.vbo), package(glMLite.glu)
 
 <v4l2_test.*>: use_v4l2
 
