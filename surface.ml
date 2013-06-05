@@ -214,7 +214,7 @@ void main() {
 precision highp float;
 void main() {
 //  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-  gl_FragColor = gl_Color;
+  gl_FragColor = vec4(gl_Color.xyz, 0.5);
 }
 " in
     let open GL in
@@ -240,7 +240,7 @@ void main() {
   let glut_init ~width ~height =
     let open Glut in
     ignore(glutInit Sys.argv);
-    glutInitDisplayMode [GLUT_RGB; GLUT_DOUBLE; GLUT_DEPTH];
+    glutInitDisplayMode [GLUT_RGB; GLUT_ALPHA; GLUT_DOUBLE; GLUT_DEPTH];
     glutInitWindowPosition ~x:100 ~y:100;
     glutInitWindowSize ~width ~height;
     ignore(glutCreateWindow ~title:"Surface");
@@ -252,13 +252,14 @@ void main() {
 
   let init_OpenGL ~width ~height =
     let open GL in
-    glEnable GL_DEPTH_TEST;
+    (* glEnable GL_DEPTH_TEST; *)
     glPolygonMode GL_FRONT GL_FILL;
     (* glPolygonMode GL_FRONT GL_LINE; *)
     glFrontFace GL_CCW;
     glDisable GL_CULL_FACE;
     glCullFace GL_BACK;
-    ()
+    glEnable GL_BLEND;
+    glBlendFunc Sfactor.GL_SRC_ALPHA Dfactor.GL_ONE_MINUS_SRC_ALPHA
 
   let glut_run () =
     let (width, height) = (1024, 1024) in
