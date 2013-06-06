@@ -3,15 +3,24 @@ open Graph
 module FloatWithId = struct
   open Graph.Delaunay.FloatPoints
 
-  type point = (int * (float * float))
+  type point = (int * ((float * float) * float))
       
-  let ccw (_, p1) (_, p2) (_, p3) = ccw p1 p2 p3
-  let in_circle (_, p1) (_, p2) (_, p3) (_, p4) = in_circle p1 p2 p3 p4      
+  let ccw (_, (p1, _)) (_, (p2, _)) (_, (p3, _)) = ccw p1 p2 p3
+  let in_circle (_, (p1, _)) (_, (p2, _)) (_, (p3, _)) (_, (p4, _)) = in_circle p1 p2 p3 p4 
 end
 
 module T = Graph.Delaunay.Make(FloatWithId)
 
-let vertices = [|(20.791693,1037.017);(27.195517,409.9173);(197.4631,530.52356);(184.06242,743.35803);(222.68794,899.43671);(383.49622,714.19183);(557.7052,510.81668);(549.82239,854.50494);(700.38312,1000.3359);(691.71204,387.8457)|]
+let vertices = [|((20.791693,1037.017), 0.0);
+		 ((27.195517,409.9173), 10.0);
+		 ((197.4631,530.52356), 20.0);
+		 ((184.06242,743.35803), 40.0);
+		 ((222.68794,899.43671), 50.0);
+		 ((383.49622,714.19183), 40.0);
+		 ((557.7052,510.81668), 30.0);
+		 ((549.82239,854.50494), 20.0);
+		 ((700.38312,1000.3359), 10.0);
+		 ((691.71204,387.8457), 00.0)|]
 
 let gen_id () =
   let id = ref 0 in
@@ -328,14 +337,14 @@ struct
     glLoadIdentity();
     gluLookAt posX posY posZ  targetX targetY targetZ  0. 1. 0. (* eye(x,y,z), focal(x,y,z), up(x,y,z) *)
 
-  let display_mesh (size, (vertices, normals, colors)) () =
+  let display_mesh (((ofs_x, ofs_y, ofs_z), size), (vertices, normals, colors)) () =
     let open GL in
     let open Glut in
     let open VBO in
     let open VertArray in
     (* Printf.printf "%.2f fps\n%!" (count_fps ()); *)
 
-    set_camera 0.0 (10.0) 20.0  0. 0. (0.);
+    set_camera ofs_x ofs_y ofs_z  0. 0. (0.);
 
     glMatrixMode GL_MODELVIEW;
     glPushMatrix ();
@@ -429,10 +438,10 @@ void main() {
     glEnable GL_DEPTH_TEST;
     glBlendFunc Sfactor.GL_SRC_ALPHA Dfactor.GL_ONE_MINUS_SRC_ALPHA
 
-  let run (size, scene) =
+  let run (args, scene) =
     let (vertices, normals, colors) = bas_of_scene scene in
     let (width, height) = (1024, 1024) in
-    glut_init ~width ~height (size, (vertices, normals, colors));
+    glut_init ~width ~height (args, (vertices, normals, colors));
     reshape ~width ~height;
     Printf.printf "Enter\n%!";
     init_OpenGL ~width ~height;
@@ -442,27 +451,50 @@ void main() {
 end
 
 let main () =
-  let scale = 20.0 in
-  let grid_width, grid_heigth = 50, 50 in
-  (* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *)
-  (* let normals = triangle_mesh_normals vertices *)
-  let scene = 
-    Scene.(
-      make_grid' (
-	fun x y ->
-	  (sin (x *. pi) +. cos (2.0 *. y *. pi), 
-	   { x = (if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0);
-	     y = (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0);
-	     z = 0.0 }
-	  ))
-	scale grid_width grid_heigth
-    ) in
+  (* let size = 20.0 in *)
+  (* let grid_width, grid_heigth = 50, 50 in *)
+  (* (\* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *\) *)
+  (* (\* let normals = triangle_mesh_normals vertices *\) *)
+  (* let scene =  *)
+  (*   Scene.( *)
+  (*     make_grid' ( *)
+  (* 	fun x y -> *)
+  (* 	  (sin (x *. pi) +. cos (2.0 *. y *. pi),  *)
+  (* 	   { x = (if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0); *)
+  (* 	     y = (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0); *)
+  (* 	     z = 0.0 } *)
+  (* 	  )) *)
+  (* 	scale grid_width grid_heigth *)
+  (*   ) in *)
   let points_with_id = Array.map (add_id (gen_id ())) vertices in
   let triangulation = T.triangulate points_with_id in
   let faces = faces_of_triangulation triangulation in
   Printf.printf "%d faces\n%!" (List.length faces);
 
-  Visualize.run (scale, (scene : (_, _) Scene.scene));
+  let scale = 0.3 in
+  let scene =
+    Array.of_list (
+      List.map
+	(fun (a, b, c) ->
+	  let mk_v (_, ((x, y), z)) =
+	    { Scene.x = scale *. x; y = scale *. y; z = z }
+	  in
+	  let v1 = mk_v a in
+	  let v2 = mk_v b in
+	  let v3 = mk_v c in
+	  Scene.(
+	    {
+	      vs = [|v1; v2; v3|];
+	      normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
+	      color = { x = Random.float 1.0; y = Random.float 1.0; z = Random.float 1.0 };
+	    }
+	  )
+	)
+	faces
+    )
+  in
+  let size = scale *. 1200.0 in
+  Visualize.run (((0.0, 100.0, 300.0), size), (scene : (_, _) Scene.scene));
 
   ()
 
