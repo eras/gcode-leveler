@@ -30,49 +30,8 @@ let faces_of_triangulation t =
   ) t;
   !faces
 
-module Visualize =
+module Scene =
 struct
-  let reshape ~width ~height =
-    let open GL in
-    let height = max height 1 in
-    glViewport 0 0 width height;
-    let aspect = float width /. float height in
-    glMatrixMode GL_PROJECTION;
-    glLoadIdentity();
-    Glu.gluPerspective ~fovy:60.0 ~aspect ~zNear:0.5 ~zFar:1000.0;
-    glMatrixMode GL_MODELVIEW
-
-  let time_counter () =
-    let t0 = ref None in
-    fun () ->
-      let t0' = 
-	match !t0 with
-	| None -> 
-	  let t = Unix.gettimeofday () in
-	  t0 := Some t;
-	  t
-	| Some t -> t
-      in
-      Unix.gettimeofday () -. t0'
-
-  let fps_counter () =
-    let t0 = ref None in
-    let n = ref 0 in
-    fun () ->
-      let t0' = 
-	match !t0 with
-	| None -> 
-	  let t = Unix.gettimeofday () in
-	  t0 := Some t;
-	  t
-	| Some t -> t
-      in
-      let fps = float !n /. (Unix.gettimeofday () -. t0') in
-      incr n;
-      fps
-
-  let count_fps = fps_counter ()
-
   type vector = {
     x : float;
     y : float;
@@ -87,9 +46,9 @@ struct
     color : 'color;
   }
 
-  type ('normal, 'color) scene = ('normal, 'color) face list
+  type ('normal, 'color) scene = ('normal, 'color) face array
 
-  let face0 normal = { vs = [||]; normal = normal; color = (); }
+  let face0 normal color = { vs = [||]; normal = normal; color = color; }
 
   let pi = atan 1.0 *. 4.0
 
@@ -157,13 +116,18 @@ struct
 
   let make_grid' f scale width height =
     let size = width * height in 
-    let faces = Array.make (size * 2) (face0 vector0) in
+    let faces = Array.make (size * 2) (face0 vector0 vector0) in
     for x = 0 to width - 1 do
       for y = 0 to height - 1 do
 	let at x y = 
 	  let x' = float x /. float width in
 	  let y' = float y /. float height in
-	  { x = scale *. x'; y = scale *. y'; z = f x' y'; }
+	  { x = scale *. x'; y = scale *. y'; z = fst (f x' y'); }
+	in
+	let color_at x y = 
+	  let x' = float x /. float width in
+	  let y' = float y /. float height in
+	  snd (f x' y')
 	in
 	let i = 2 * (x + y * width) in
 	let v1 = at (x + 0) (y + 0) in
@@ -172,14 +136,14 @@ struct
 	faces.(i + 0) <-
 	  { vs = [|v1; v2; v3|];
 	    normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	    color = (); };
+	    color = color_at x y; };
 	let v1 = at (x + 0) (y + 1) in
 	let v2 = at (x + 1) (y + 1) in
 	let v3 = at (x + 1) (y + 0) in
 	faces.(i + 1) <-
 	  { vs = [|v1; v2; v3|];
 	    normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	    color = (); };
+	    color = color_at (x) (y); };
       done
     done;
     faces    
@@ -200,7 +164,14 @@ struct
 	  face.normal
       )
     in
-    (ba_of_array3' vertices, ba_of_array3' normals)
+    let colors =
+      Array.init (Array.length scene * 3) (
+	fun i ->
+	  let face = scene.(i / 3) in
+	  face.color
+      )
+    in
+    (ba_of_array3' vertices, ba_of_array3' normals, ba_of_array3' colors)
 
   let make_grid f scale width height =
     let size = width * height in 
@@ -300,25 +271,52 @@ struct
       set ar' x (f x (get ar x))
     done;
     ar'
+end
 
-  let grid_width, grid_heigth = 50, 50
-  (* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *)
-  (* let normals = triangle_mesh_normals vertices *)
-  let scale = 20.0
-  let scene = make_grid' (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) scale grid_width grid_heigth
-  let (vertices, normals) = bas_of_scene scene
-  (* let vertices =  *)
-  (*   ba1_mapi ( *)
-  (*     fun i vert -> *)
-  (* 	vert +. 500.0 *. Bigarray.Array1.get normals i *)
-  (*   ) vertices *)
-  let colors = make_rgb_grid (fun x y -> ((if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0),
-					  (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0),
-					  0.0)) grid_width grid_heigth
-  (* let colors = ba_of_array3 (Array.make (10 * 30) (1.0, 1.0, 1.0)) *)
+module Visualize =
+struct
+  open Scene
 
-  (* let colors = ba_of_array3 (Array.make (10 * 10 * 2) (1.0, 1.0, 1.0)) *)
+  let reshape ~width ~height =
+    let open GL in
+    let height = max height 1 in
+    glViewport 0 0 width height;
+    let aspect = float width /. float height in
+    glMatrixMode GL_PROJECTION;
+    glLoadIdentity();
+    Glu.gluPerspective ~fovy:60.0 ~aspect ~zNear:0.5 ~zFar:1000.0;
+    glMatrixMode GL_MODELVIEW
 
+  let time_counter () =
+    let t0 = ref None in
+    fun () ->
+      let t0' = 
+	match !t0 with
+	| None -> 
+	  let t = Unix.gettimeofday () in
+	  t0 := Some t;
+	  t
+	| Some t -> t
+      in
+      Unix.gettimeofday () -. t0'
+
+  let fps_counter () =
+    let t0 = ref None in
+    let n = ref 0 in
+    fun () ->
+      let t0' = 
+	match !t0 with
+	| None -> 
+	  let t = Unix.gettimeofday () in
+	  t0 := Some t;
+	  t
+	| Some t -> t
+      in
+      let fps = float !n /. (Unix.gettimeofday () -. t0') in
+      incr n;
+      fps
+
+  let count_fps = fps_counter ()
 
   let time = time_counter ()
 
@@ -330,7 +328,7 @@ struct
     glLoadIdentity();
     gluLookAt posX posY posZ  targetX targetY targetZ  0. 1. 0. (* eye(x,y,z), focal(x,y,z), up(x,y,z) *)
 
-  let display_mesh context () =
+  let display_mesh (size, (vertices, normals, colors)) () =
     let open GL in
     let open Glut in
     let open VBO in
@@ -352,7 +350,7 @@ struct
     glVertexPointer 3 Coord.GL_FLOAT 0 vertices;
     glNormalPointer Norm.GL_FLOAT 0 normals;
     glColorPointer 3 Color.GL_FLOAT 0 colors;
-    glTranslate (~-. scale /. 2.0) (~-. scale /. 2.0) 0.0;
+    glTranslate (~-. size /. 2.0) (~-. size /. 2.0) 0.0;
     glDrawArrays ~mode:GL_TRIANGLES ~first:0 ~count:(Bigarray.Array1.dim vertices / 3);
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState GL_NORMAL_ARRAY;
@@ -393,7 +391,7 @@ void main() {
     let open GL in
     let fragmentShader = glCreateShader GL_FRAGMENT_SHADER in
     let vertexShader = glCreateShader GL_VERTEX_SHADER in
-    let context = glCreateProgram () in
+    let program = glCreateProgram () in
     glShaderSource vertexShader vertexShaderSrc;
     glShaderSource fragmentShader fragmentShaderSrc;
     let compileShader label shader =
@@ -403,20 +401,19 @@ void main() {
     in
     compileShader "vertexShader" vertexShader;
     compileShader "fragmentShader" fragmentShader;
-    glAttachShader context fragmentShader;
-    glAttachShader context vertexShader;
-    glLinkProgram context;
-    glUseProgram context
+    glAttachShader program fragmentShader;
+    glAttachShader program vertexShader;
+    glLinkProgram program;
+    glUseProgram program
 
-  let glut_init ~width ~height =
+  let glut_init ~width ~height scene =
     let open Glut in
     ignore(glutInit Sys.argv);
     glutInitDisplayMode [GLUT_RGB; GLUT_ALPHA; GLUT_DOUBLE; GLUT_DEPTH];
     glutInitWindowPosition ~x:100 ~y:100;
     glutInitWindowSize ~width ~height;
     ignore(glutCreateWindow ~title:"Surface");
-    let context = program_init () in
-    glutDisplayFunc ~display:(display_mesh context);
+    glutDisplayFunc ~display:(display_mesh scene);
     glutReshapeFunc ~reshape:reshape;
     glutIdleFunc ~idle:glutPostRedisplay;
     ()
@@ -432,9 +429,10 @@ void main() {
     glEnable GL_DEPTH_TEST;
     glBlendFunc Sfactor.GL_SRC_ALPHA Dfactor.GL_ONE_MINUS_SRC_ALPHA
 
-  let glut_run () =
+  let run (size, scene) =
+    let (vertices, normals, colors) = bas_of_scene scene in
     let (width, height) = (1024, 1024) in
-    glut_init ~width ~height;
+    glut_init ~width ~height (size, (vertices, normals, colors));
     reshape ~width ~height;
     Printf.printf "Enter\n%!";
     init_OpenGL ~width ~height;
@@ -444,12 +442,27 @@ void main() {
 end
 
 let main () =
+  let scale = 20.0 in
+  let grid_width, grid_heigth = 50, 50 in
+  (* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *)
+  (* let normals = triangle_mesh_normals vertices *)
+  let scene = 
+    Scene.(
+      make_grid' (
+	fun x y ->
+	  (sin (x *. pi) +. cos (2.0 *. y *. pi), 
+	   { x = (if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0);
+	     y = (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0);
+	     z = 0.0 }
+	  ))
+	scale grid_width grid_heigth
+    ) in
   let points_with_id = Array.map (add_id (gen_id ())) vertices in
   let triangulation = T.triangulate points_with_id in
   let faces = faces_of_triangulation triangulation in
   Printf.printf "%d faces\n%!" (List.length faces);
 
-  Visualize.glut_run ();
+  Visualize.run (scale, (scene : (_, _) Scene.scene));
 
   ()
 
