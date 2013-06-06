@@ -73,9 +73,65 @@ struct
 
   let count_fps = fps_counter ()
 
-  type context = { x : int }
+  type vector = {
+    x : float;
+    y : float;
+    z : float;
+  }
 
-  let ar_of_array3 xs =
+  let vector0 = { x = 0.0; y = 0.0; z = 0.0 }
+
+  type ('normal, 'color) face = {
+    vs : vector array;
+    normal : 'normal;
+    color : 'color;
+  }
+
+  type ('normal, 'color) scene = ('normal, 'color) face list
+
+  let face0 normal = { vs = [||]; normal = normal; color = (); }
+
+  let pi = atan 1.0 *. 4.0
+
+  let cross3 (a, b, c) (d, e, f) =
+    (b *. f -. c *. e, 
+     c *. d -. a *. f, 
+     a *. e -. b *. d)
+
+  let cross3' { x = a; y = b; z = c } { x = d; y = e; z = f } =
+    { x = b *. f -. c *. e;
+      y = c *. d -. a *. f;
+      z = a *. e -. b *. d }
+
+  let abs3' { x; y; z } = 
+    sqrt (x ** 2.0 +. y ** 2.0 +. z ** 2.0)
+
+  let (-.|) (x1, x2, x3) (y1, y2, y3) =
+    (x1 -. y1, x2 -. y2, x3 -. y3)     
+
+  let ( -.|. ) { x = x1; y = x2; z = x3 } { x = y1; y = y2; z = y3 } =
+    { x = x1 -. y1; y = x2 -. y2; z = x3 -. y3 }
+
+  let (+.|) (x1, x2, x3) (y1, y2, y3) =
+    (x1 +. y1, x2 +. y2, x3 +. y3)     
+
+  let ( +.|. ) { x = x1; y = x2; z = x3 } { x = y1; y = y2; z = y3 } =
+    { x = x1 +. y1; y = x2 +. y2; z = x3 +. y3 }
+
+  let ( *.| ) (x1, y1, z1) (x2, y2, z2) =
+    (x1 *. x2, y1 *. y2, z1 *. z2)
+
+  let ( *.|. ) { x = x1; y = y1; z = z1 } { x = x2; y = y2; z = z2 } =
+    { x = x1 *. x2; y = y1 *. y2; z = z1 *. z2 }
+
+  let unit3' ({ x; y; z } as v) =
+    if x <> 0.0 || y <> 0.0 || z <> 0.0 then
+      let l = abs3' v in
+      v *.|. { x = 1.0 /. l; y = 1.0 /. l; z = 1.0 /. l }
+    else
+      vector0
+
+  let ba_of_array3 xs =
     let ps = Bigarray.(Array1.create float32 c_layout (3 * Array.length xs)) in
     Array.iteri (
       fun i (x, y, z) ->
@@ -87,6 +143,65 @@ struct
     ) xs;
     ps
 
+  let ba_of_array3' xs =
+    let ps = Bigarray.(Array1.create float32 c_layout (3 * Array.length xs)) in
+    Array.iteri (
+      fun i { x; y; z } ->
+	Bigarray.Array1.(
+	  set ps (i * 3 + 0) x;
+	  set ps (i * 3 + 1) y;
+	  set ps (i * 3 + 2) z
+	)
+    ) xs;
+    ps
+
+  let make_grid' f scale width height =
+    let size = width * height in 
+    let faces = Array.make (size * 2) (face0 vector0) in
+    for x = 0 to width - 1 do
+      for y = 0 to height - 1 do
+	let at x y = 
+	  let x' = float x /. float width in
+	  let y' = float y /. float height in
+	  { x = scale *. x'; y = scale *. y'; z = f x' y'; }
+	in
+	let i = 2 * (x + y * width) in
+	let v1 = at (x + 0) (y + 0) in
+	let v2 = at (x + 0) (y + 1) in
+	let v3 = at (x + 1) (y + 0) in
+	faces.(i + 0) <-
+	  { vs = [|v1; v2; v3|];
+	    normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
+	    color = (); };
+	let v1 = at (x + 0) (y + 1) in
+	let v2 = at (x + 1) (y + 1) in
+	let v3 = at (x + 1) (y + 0) in
+	faces.(i + 1) <-
+	  { vs = [|v1; v2; v3|];
+	    normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
+	    color = (); };
+      done
+    done;
+    faces    
+
+  let bas_of_scene scene =
+    let vertices =
+      Array.init (Array.length scene * 3) (
+	fun i ->
+	  let face = scene.(i / 3) in
+	  let vertex = face.vs.(i mod 3) in
+	  vertex
+      )
+    in
+    let normals =
+      Array.init (Array.length scene * 3) (
+	fun i ->
+	  let face = scene.(i / 3) in
+	  face.normal
+      )
+    in
+    (ba_of_array3' vertices, ba_of_array3' normals)
+
   let make_grid f scale width height =
     let size = width * height in 
     let ar = Bigarray.(Array1.create float32 c_layout (2 * 3 * 3 * size)) in
@@ -94,8 +209,8 @@ struct
       for y = 0 to height - 1 do
 	let i = 2 * 3 * 3 * (x + y * width) in
 	let set_at i x y =
-	  let x' = (float x /. float (width - 1)) in
-	  let y' = (float y /. float (height - 1)) in
+	  let x' = float x /. float width in
+	  let y' = float y /. float height in
 	  Bigarray.Array1.(
 	    set ar (i + 0) (scale *. x');
 	    set ar (i + 1) (scale *. y');
@@ -137,27 +252,72 @@ struct
     ar    
 
   let vertices =
-    ar_of_array3
+    ba_of_array3
       [| 0.0,  0.0, 0.0;
   	 1.0,  0.0, 0.0;
   	 0.0,  1.0, 0.0|]
 
   let colors =
-    ar_of_array3
+    ba_of_array3
       [| 0.0,  0.0, 1.0;
   	 1.0,  0.0, 0.0;
   	 0.0,  1.0, 0.0|]
 
-  let pi = atan 1.0 *. 4.0
+  let triangle_mesh_normals verts_ba =
+    let num_vertices = Bigarray.Array1.dim verts_ba / 3 in
+    let vertex n =
+      Bigarray.Array1.(
+	get verts_ba (3 * n + 0),
+	get verts_ba (3 * n + 1),
+	get verts_ba (3 * n + 2)
+      )
+    in
+    ba_of_array3 (
+      Array.init num_vertices (
+	fun vertex_idx ->
+	  let v1 = vertex (3 * (vertex_idx / 3) + 0) in
+	  let v2 = vertex (3 * (vertex_idx / 3) + 1) in
+	  let v3 = vertex (3 * (vertex_idx / 3) + 2) in
+	  cross3 (v2 -.| v1) (v3 -.| v1)
+      )
+    )
+      
 
-  let grid_width, grid_heigth = 100, 100
-  let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth
+  let array_of_bigarray1 ar = Array.init (Bigarray.Array1.dim ar) (fun i -> Bigarray.Array1.get ar i)
+
+  let ba1_map f ar = 
+    let open Bigarray.Array1 in
+    let ar' = create (kind ar) (layout ar) (dim ar) in
+    for x = 0 to dim ar - 1 do
+      set ar' x (f (get ar x))
+    done;
+    ar'
+
+  let ba1_mapi f ar = 
+    let open Bigarray.Array1 in
+    let ar' = create (kind ar) (layout ar) (dim ar) in
+    for x = 0 to dim ar - 1 do
+      set ar' x (f x (get ar x))
+    done;
+    ar'
+
+  let grid_width, grid_heigth = 50, 50
+  (* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *)
+  (* let normals = triangle_mesh_normals vertices *)
+  let scale = 20.0
+  let scene = make_grid' (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) scale grid_width grid_heigth
+  let (vertices, normals) = bas_of_scene scene
+  (* let vertices =  *)
+  (*   ba1_mapi ( *)
+  (*     fun i vert -> *)
+  (* 	vert +. 500.0 *. Bigarray.Array1.get normals i *)
+  (*   ) vertices *)
   let colors = make_rgb_grid (fun x y -> ((if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0),
 					  (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0),
 					  0.0)) grid_width grid_heigth
-  (* let colors = ar_of_array3 (Array.make (10 * 30) (1.0, 1.0, 1.0)) *)
+  (* let colors = ba_of_array3 (Array.make (10 * 30) (1.0, 1.0, 1.0)) *)
 
-  (* let colors = ar_of_array3 (Array.make (10 * 10 * 2) (1.0, 1.0, 1.0)) *)
+  (* let colors = ba_of_array3 (Array.make (10 * 10 * 2) (1.0, 1.0, 1.0)) *)
 
 
   let time = time_counter ()
@@ -177,22 +337,25 @@ struct
     let open VertArray in
     (* Printf.printf "%.2f fps\n%!" (count_fps ()); *)
 
-    set_camera 0. (3.0) 20.0  0. 0. (0.);
+    set_camera 0.0 (10.0) 20.0  0. 0. (0.);
 
     glMatrixMode GL_MODELVIEW;
     glPushMatrix ();
-    glRotate (30.0 *. time ()) 0.0 1.0 0.0;
     glRotate (-90.0) 1.0 0.0 0.0;
+    glRotate (30.0 *. time ()) 0.0 0.0 1.0;
     glClearColor 0.5 0.5 0.5 1.0;
     glClear [GL_COLOR_BUFFER_BIT; GL_DEPTH_BUFFER_BIT];
 
     glEnableClientState GL_VERTEX_ARRAY;
+    glEnableClientState GL_NORMAL_ARRAY;
     glEnableClientState GL_COLOR_ARRAY;
     glVertexPointer 3 Coord.GL_FLOAT 0 vertices;
+    glNormalPointer Norm.GL_FLOAT 0 normals;
     glColorPointer 3 Color.GL_FLOAT 0 colors;
-    glTranslate (-5.0) (-5.0) 0.0;
+    glTranslate (~-. scale /. 2.0) (~-. scale /. 2.0) 0.0;
     glDrawArrays ~mode:GL_TRIANGLES ~first:0 ~count:(Bigarray.Array1.dim vertices / 3);
     glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState GL_NORMAL_ARRAY;
     glDisableClientState GL_COLOR_ARRAY;
 
     glPopMatrix();
@@ -203,16 +366,28 @@ struct
 #version 120
 invariant gl_Position;
 
+varying vec3 normal;
+
 void main() {
   gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex;
+  normal = normalize(gl_NormalMatrix * gl_Normal);
+//  gl_FrontColor = gl_Color;
   gl_FrontColor = gl_Color;
+//  gl_FrontColor = vec4(0.0, 0.0, 0.0, 0.0);
 }
 " in
     let fragmentShaderSrc = "
 #version 120
+varying vec3 normal;
 void main() {
 //  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
-  gl_FragColor = vec4(gl_Color.xyz, 0.5);
+//  gl_FragColor = vec4(gl_Color.xyz, 0.5);
+  vec3 lightDir = normalize(vec3(1.0, 1.0, 1.0));
+  float intensity = max(dot(lightDir, normalize(normal)), 0.0);
+//  float intensity = max(-normal.y, 0.0);
+  gl_FragColor = vec4(intensity * gl_Color.xyz, 0.5);
+//  gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+//  gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
 }
 " in
     let open GL in
@@ -231,9 +406,7 @@ void main() {
     glAttachShader context fragmentShader;
     glAttachShader context vertexShader;
     glLinkProgram context;
-    glUseProgram context;
-
-    { x = 0 }
+    glUseProgram context
 
   let glut_init ~width ~height =
     let open Glut in
@@ -251,13 +424,13 @@ void main() {
 
   let init_OpenGL ~width ~height =
     let open GL in
-    (* glEnable GL_DEPTH_TEST; *)
     glPolygonMode GL_FRONT GL_FILL;
     (* glPolygonMode GL_FRONT GL_LINE; *)
     glFrontFace GL_CCW;
     glDisable GL_CULL_FACE;
     glCullFace GL_BACK;
-    glEnable GL_BLEND;
+    glDisable GL_BLEND;
+    glEnable GL_DEPTH_TEST;
     glBlendFunc Sfactor.GL_SRC_ALPHA Dfactor.GL_ONE_MINUS_SRC_ALPHA
 
   let glut_run () =
