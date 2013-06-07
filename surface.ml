@@ -283,6 +283,22 @@ struct
       set ar' x (f x (get ar x))
     done;
     ar'
+      
+  let map_face_vertices f face = { face with vs = Array.map f face.vs }
+
+  let map_scene_vertices f scene = Array.map (map_face_vertices f) scene
+
+  let fold_face_vertices f v0 face = Array.fold_left f v0 face.vs
+
+  let fold_scene_faces f v0 scene = Array.fold_left f v0 scene
+
+  let fold_scene_vertices f v0 scene = fold_scene_faces (fun v face -> fold_face_vertices f v face) v0 scene
+
+  let center_scene scene =
+    let (sum, count) = fold_scene_vertices (fun (sum, count) v -> (sum +.|. v, count + 1)) (vector0, 0) scene in
+    let count = float count in
+    let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
+    map_scene_vertices (fun v -> v -.|. center) scene
 end
 
 module Visualize =
