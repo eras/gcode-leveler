@@ -47,6 +47,9 @@ struct
     z : float;
   }
 
+  let string_of_vector { x; y; z } =
+    Printf.sprintf "{ x = %f; y = %f; z = %f }" x y z
+
   let vector0 = { x = 0.0; y = 0.0; z = 0.0 }
 
   type ('normal, 'color) face = {
