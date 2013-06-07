@@ -513,7 +513,7 @@ let main () =
     )
   in
   let size = scale *. 1200.0 in
-  Visualize.run (((0.0, 100.0, 300.0), size), (scene : (_, _) Scene.scene));
+  Visualize.run (((0.0, 100.0, 300.0), 0.0), Scene.center_scene scene);
 
   ()
 
