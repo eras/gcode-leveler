@@ -356,7 +356,7 @@ struct
     glLoadIdentity();
     gluLookAt posX posY posZ  targetX targetY targetZ  0. 1. 0. (* eye(x,y,z), focal(x,y,z), up(x,y,z) *)
 
-  let display_mesh (((ofs_x, ofs_y, ofs_z), size), (vertices, normals, colors)) () =
+  let display_mesh (((ofs_x, ofs_y, ofs_z)), (vertices, normals, colors)) () =
     let open GL in
     let open Glut in
     let open VBO in
@@ -378,7 +378,7 @@ struct
     glVertexPointer 3 Coord.GL_FLOAT 0 vertices;
     glNormalPointer Norm.GL_FLOAT 0 normals;
     glColorPointer 3 Color.GL_FLOAT 0 colors;
-    glTranslate (~-. size /. 2.0) (~-. size /. 2.0) 0.0;
+    (* glTranslate (~-. size /. 2.0) (~-. size /. 2.0) 0.0; *)
     glDrawArrays ~mode:GL_TRIANGLES ~first:0 ~count:(Bigarray.Array1.dim vertices / 3);
     glDisableClientState(GL_VERTEX_ARRAY);
     glDisableClientState GL_NORMAL_ARRAY;
@@ -513,7 +513,7 @@ let main () =
     )
   in
   let size = scale *. 1200.0 in
-  Visualize.run (((0.0, 100.0, 300.0), 0.0), Scene.center_scene scene);
+  Visualize.run (((0.0, 100.0, 300.0)), Scene.center_scene scene);
 
   ()
 
