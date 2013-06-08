@@ -28,8 +28,6 @@ val num_scene_vertices : scene -> int
 
 val center_scene : scene -> scene
 
-val face0 : RecVec.t -> RecVec.t -> face
-
 val enum_scene_faces : scene -> (FaceMap.key * face) BatEnum.t
 
 val enum_scene_vertices : scene -> RecVec.t Batteries.Enum.t

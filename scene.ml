@@ -57,8 +57,6 @@ let center_scene scene =
   let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
   map_scene_vertices (fun v -> v -.|. center) scene
 
-let face0 normal color = { vs = []; normal = normal; color = color; }
-
 let enum_scene_faces scene : (FaceMap.key * face) BatEnum.t =
   FaceMap.enum scene
 
