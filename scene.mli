@@ -16,15 +16,15 @@ val add : face -> scene -> scene
 
 val empty : scene
 
-val map_face_vertices : (vertex -> vertex) -> face -> face
+(* val map_face_vertices : (vertex -> vertex) -> face -> face *)
 
 val map_scene_vertices : (vertex -> vertex) -> scene -> scene
 
-val fold_face_vertices : ('a -> vertex -> 'a) -> 'a -> face -> 'a
+(* val fold_face_vertices : ('a -> vertex -> 'a) -> 'a -> face -> 'a *)
 
-val fold_scene_faces : ('a -> face -> 'a) -> 'a -> scene -> 'a
+(* val fold_scene_faces : ('a -> face -> 'a) -> 'a -> scene -> 'a *)
 
-val fold_scene_vertices : ('a -> vertex -> 'a) -> 'a -> scene -> 'a
+(* val fold_scene_vertices : ('a -> vertex -> 'a) -> 'a -> scene -> 'a *)
 
 val num_scene_faces : scene -> int
 
@@ -32,9 +32,9 @@ val num_scene_vertices : scene -> int
 
 val center_scene : scene -> scene
 
-val enum_scene_faces : scene -> (face_id * face) BatEnum.t
+(* val enum_scene_faces : scene -> (face_id * face) BatEnum.t *)
 
-val enum_scene_vertices : scene -> vertex Batteries.Enum.t
+(* val enum_scene_vertices : scene -> vertex Batteries.Enum.t *)
 
 val scene_of_function : (float -> float -> float * RecVec.t) -> float -> int -> int -> scene
 
