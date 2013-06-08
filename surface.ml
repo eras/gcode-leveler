@@ -226,7 +226,7 @@ let main () =
 	  let v3 = mk_v c in
 	  Scene.(
 	    {
-	      id = mk_face_id ();
+	      face_id = mk_face_id ();
 	      vs = [v1; v2; v3];
 	      normal = RecVec.(unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)));
 	      color = { RecVec.x = Random.float 1.0; y = Random.float 1.0; z = Random.float 1.0 };

@@ -1,19 +1,19 @@
 open RecVec
 
-type id = int
+type face_id = int
 
 type face = {
-  id     : id;
+  face_id     : face_id;
   vs	 : t list;
   normal : t;
   color	 : t;
 }
 
 let mk_face_id =
-  let id = ref 0 in
+  let face_id = ref 0 in
   fun () ->
-    incr id;
-    !id
+    incr face_id;
+    !face_id
 
 module IdMap =
 struct
@@ -28,7 +28,7 @@ end
 
 type scene = face array
 
-let face0 normal color = { id = mk_face_id (); vs = []; normal = normal; color = color; }
+let face0 normal color = { face_id = mk_face_id (); vs = []; normal = normal; color = color; }
 
 let ba_of_array3' xs =
   let ps = Bigarray.(Array1.create float32 c_layout (3 * Array.length xs)) in
@@ -62,7 +62,7 @@ let make_grid' f scale width height =
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       faces.(i + 0) <-
-	{ id = mk_face_id ();
+	{ face_id = mk_face_id ();
 	  vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at x y; };
@@ -70,7 +70,7 @@ let make_grid' f scale width height =
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       faces.(i + 1) <-
-	{ id = mk_face_id ();
+	{ face_id = mk_face_id ();
 	  vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at (x) (y); };
