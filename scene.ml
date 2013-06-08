@@ -1,10 +1,12 @@
 open RecVec
 
-type ('normal, 'color) face = {
-  id     : int;
+type id = int
+
+type face = {
+  id     : id;
   vs	 : t list;
-  normal : 'normal;
-  color	 : 'color;
+  normal : t;
+  color	 : t;
 }
 
 let mk_face_id =
@@ -13,7 +15,18 @@ let mk_face_id =
     incr id;
     !id
 
-type ('normal, 'color) scene = ('normal, 'color) face array
+module IdMap =
+struct
+  type t = id
+  let compare (x:t) y = compare x y
+end
+
+module FaceMap = 
+struct
+  type ('normal, 'color) t
+end
+
+type scene = face array
 
 let face0 normal color = { id = mk_face_id (); vs = []; normal = normal; color = color; }
 
