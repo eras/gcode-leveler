@@ -7,14 +7,11 @@ type vertex_id = int
 type vertex = (vertex_id * RecVec.t)
 
 type face = {
-  vs	 : vertex list;
-  normal : RecVec.t;
-  color	 : RecVec.t;
+  face_id  : face_id;
+  vs	   : vertex list;
+  normal   : RecVec.t;
+  color	   : RecVec.t;
 }
-
-type triangle = face
-
-let triangle (v1, v2, v3) normal color = { vs = [v1; v2; v3]; normal; color }
 
 let mk_face_id =
   let face_id = ref 0 in
@@ -27,6 +24,10 @@ let mk_vertex_id =
   fun () ->
     incr vertex_id;
     !vertex_id
+
+type triangle = face
+
+let triangle (v1, v2, v3) normal color = { face_id = mk_face_id (); vs = [v1; v2; v3]; normal; color }
 
 let recvec_of_vertex : vertex -> RecVec.t = snd
 
@@ -56,8 +57,7 @@ type scene = {
 }
 
 let add face scene =
-  let face_id = mk_face_id () in
-  { s_faces = FaceMap.add face_id face scene.s_faces;
+  { s_faces = FaceMap.add face.face_id face scene.s_faces;
     s_vertices = List.fold_left (fun vs ((vertex_id, vector) as vertex) -> VertexMap.add vertex_id vertex vs) scene.s_vertices face.vs; }
 
 let empty : scene = { s_faces = FaceMap.empty; s_vertices = VertexMap.empty; }
@@ -122,17 +122,17 @@ let scene_of_function (f : float -> float -> float * RecVec.t) scale width heigh
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ vs = [vertex_of_recvec v1; vertex_of_recvec v2; vertex_of_recvec v3];
-	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	  color = color_at x y; }
+	(triangle (vertex_of_recvec v1, vertex_of_recvec v2, vertex_of_recvec v3)
+	   (unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)))
+	   (color_at x y))
 	!scene;
       let v1 = at (x + 0) (y + 1) in
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ vs = [vertex_of_recvec v1; vertex_of_recvec v2; vertex_of_recvec v3];
-	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	  color = color_at (x) (y); }
+	(triangle (vertex_of_recvec v1, vertex_of_recvec v2, vertex_of_recvec v3)
+	   (unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)))
+	   (color_at x y))
 	!scene;
     done
   done;
