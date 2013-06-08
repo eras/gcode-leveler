@@ -208,21 +208,6 @@ void main() {
 end
 
 let main () =
-  (* let size = 20.0 in *)
-  (* let grid_width, grid_heigth = 50, 50 in *)
-  (* (\* let vertices = make_grid (fun x y -> sin (x *. pi) +. cos (2.0 *. y *. pi)) 10.0 grid_width grid_heigth *\) *)
-  (* (\* let normals = triangle_mesh_normals vertices *\) *)
-  (* let scene =  *)
-  (*   Scene.( *)
-  (*     make_grid' ( *)
-  (* 	fun x y -> *)
-  (* 	  (sin (x *. pi) +. cos (2.0 *. y *. pi),  *)
-  (* 	   { x = (if mod_float (5.0 *. x) 1.0 > 0.5 then 1.0 else 0.0); *)
-  (* 	     y = (if mod_float (5.0 *. y) 1.0 > 0.5 then 1.0 else 0.0); *)
-  (* 	     z = 0.0 } *)
-  (* 	  )) *)
-  (* 	scale grid_width grid_heigth *)
-  (*   ) in *)
   let points_with_id = Array.map (add_id (gen_id ())) vertices in
   let triangulation = T.triangulate points_with_id in
   let faces = faces_of_triangulation triangulation in
