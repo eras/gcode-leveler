@@ -2,11 +2,14 @@ open Batteries
 open RecVec
 
 type face_id = int
+type vertex_id = int
+
+type vertex = (vertex_id * RecVec.t)
 
 type face = {
-  vs	 : t list;
-  normal : t;
-  color	 : t;
+  vs	 : vertex list;
+  normal : RecVec.t;
+  color	 : RecVec.t;
 }
 
 let mk_face_id =
@@ -14,6 +17,16 @@ let mk_face_id =
   fun () ->
     incr face_id;
     !face_id
+
+let mk_vertex_id =
+  let vertex_id = ref 0 in
+  fun () ->
+    incr vertex_id;
+    !vertex_id
+
+let recvec_of_vertex : vertex -> RecVec.t = snd
+
+let vertex_of_recvec : RecVec.t -> vertex = fun x -> (mk_vertex_id (), x)
 
 module IdMap =
   Map.Make (
@@ -52,10 +65,10 @@ let num_scene_faces scene = IdMap.cardinal scene
 let num_scene_vertices scene = fold_scene_vertices (fun n _ -> (n + 1)) 0 scene
 
 let center_scene scene =
-  let (sum, count) = fold_scene_vertices (fun (sum, count) v -> (sum +.|. v, count + 1)) (vector0, 0) scene in
+  let (sum, count) = fold_scene_vertices (fun (sum, count) v -> (sum +.|. recvec_of_vertex v, count + 1)) (vector0, 0) scene in
   let count = float count in
   let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
-  map_scene_vertices (fun v -> v -.|. center) scene
+  map_scene_vertices (fun v -> vertex_of_recvec (recvec_of_vertex v -.|. center)) scene
 
 let enum_scene_faces scene : (FaceMap.key * face) BatEnum.t =
   FaceMap.enum scene
@@ -79,7 +92,7 @@ let ba_of_array3' xs =
   ) xs;
   ps
 
-let scene_of_function f scale width height : scene =
+let scene_of_function (f : float -> float -> float * RecVec.t) scale width height : scene =
   let scene = ref IdMap.empty in
   for x = 0 to width - 1 do
     for y = 0 to height - 1 do
@@ -97,7 +110,7 @@ let scene_of_function f scale width height : scene =
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ vs = [v1; v2; v3];
+	{ vs = [vertex_of_recvec v1; vertex_of_recvec v2; vertex_of_recvec v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at x y; }
 	!scene;
@@ -105,7 +118,7 @@ let scene_of_function f scale width height : scene =
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ vs = [v1; v2; v3];
+	{ vs = [vertex_of_recvec v1; vertex_of_recvec v2; vertex_of_recvec v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at (x) (y); }
 	!scene;
@@ -115,6 +128,9 @@ let scene_of_function f scale width height : scene =
 
 let bas_of_scene (scene : scene) =
   let flatten_vertices vs =
+    Array.concat (List.of_enum (Enum.map (fun (_, {x; y; z}) -> [|x; y; z|]) vs))
+  in
+  let flatten_recvecs vs =
     Array.concat (List.of_enum (Enum.map (fun {x; y; z} -> [|x; y; z|]) vs))
   in
   let flatten_vertices_thrice vs =
@@ -128,7 +144,7 @@ let bas_of_scene (scene : scene) =
   in
   let normals =
     let faces = enum_scene_faces scene in
-    mk_big (flatten_vertices (Enum.map (fun (_, face) -> face.normal) faces))
+    mk_big (flatten_recvecs (Enum.map (fun (_, face) -> face.normal) faces))
   in
   let colors =
     let faces = enum_scene_faces scene in
