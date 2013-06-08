@@ -6,11 +6,15 @@ type vertex_id = int
 
 type vertex = (vertex_id * RecVec.t)
 
+type face_aux = {
+  fa_normal   : RecVec.t;
+  fa_color    : RecVec.t;
+}
+
 type face = {
   face_id  : face_id;
   vs	   : vertex list;
-  normal   : RecVec.t;
-  color	   : RecVec.t;
+  f_aux    : face_aux;
 }
 
 let mk_face_id =
@@ -27,7 +31,7 @@ let mk_vertex_id =
 
 type triangle = face
 
-let triangle (v1, v2, v3) normal color = { face_id = mk_face_id (); vs = [v1; v2; v3]; normal; color }
+let triangle (v1, v2, v3) fa_normal fa_color = { face_id = mk_face_id (); vs = [v1; v2; v3]; f_aux = { fa_normal; fa_color } }
 
 let recvec_of_vertex : vertex -> RecVec.t = snd
 
@@ -156,11 +160,11 @@ let bas_of_scene (scene : scene) =
   in
   let normals =
     let faces = enum_scene_faces scene in
-    mk_big (flatten_recvecs (Enum.map (fun (_, face) -> face.normal) faces))
+    mk_big (flatten_recvecs (Enum.map (fun (_, face) -> face.f_aux.fa_normal) faces))
   in
   let colors =
     let faces = enum_scene_faces scene in
-    mk_big (flatten_vertices_thrice (Enum.map (fun (_, face) -> face.color) faces))
+    mk_big (flatten_vertices_thrice (Enum.map (fun (_, face) -> face.f_aux.fa_color) faces))
   in
   (vertices, normals, colors)
 
