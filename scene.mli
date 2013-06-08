@@ -9,10 +9,6 @@ type face
 
 val face : vertex list -> RecVec.t -> RecVec.t -> face
 
-module FaceMap : Map.S with type key = face_id
-
-type face_map = face FaceMap.t
-
 type scene
 
 val add : face -> scene -> scene
@@ -35,7 +31,7 @@ val num_scene_vertices : scene -> int
 
 val center_scene : scene -> scene
 
-val enum_scene_faces : scene -> (FaceMap.key * face) BatEnum.t
+val enum_scene_faces : scene -> (face_id * face) BatEnum.t
 
 val enum_scene_vertices : scene -> vertex Batteries.Enum.t
 
