@@ -312,7 +312,7 @@ struct
     let aspect = float width /. float height in
     glMatrixMode GL_PROJECTION;
     glLoadIdentity();
-    Glu.gluPerspective ~fovy:60.0 ~aspect ~zNear:0.5 ~zFar:1000.0;
+    Glu.gluPerspective ~fovy:40.0 ~aspect ~zNear:0.5 ~zFar:1000.0;
     glMatrixMode GL_MODELVIEW
 
   let time_counter () =
@@ -513,7 +513,7 @@ let main () =
     )
   in
   let size = scale *. 1200.0 in
-  Visualize.run (((0.0, 100.0, 300.0)), Scene.center_scene scene);
+  Visualize.run (((0.0, 200.0, 400.0)), Scene.center_scene scene);
 
   ()
 
