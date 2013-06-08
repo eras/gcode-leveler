@@ -1,14 +1,14 @@
 open RecVec
 
 type ('normal, 'color) face = {
-  vs	 : t array;
+  vs	 : t list;
   normal : 'normal;
   color	 : 'color;
 }
 
 type ('normal, 'color) scene = ('normal, 'color) face array
 
-let face0 normal color = { vs = [||]; normal = normal; color = color; }
+let face0 normal color = { vs = []; normal = normal; color = color; }
 
 let ba_of_array3' xs =
   let ps = Bigarray.(Array1.create float32 c_layout (3 * Array.length xs)) in
@@ -42,14 +42,14 @@ let make_grid' f scale width height =
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       faces.(i + 0) <-
-	{ vs = [|v1; v2; v3|];
+	{ vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at x y; };
       let v1 = at (x + 0) (y + 1) in
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       faces.(i + 1) <-
-	{ vs = [|v1; v2; v3|];
+	{ vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at (x) (y); };
     done
@@ -61,7 +61,7 @@ let bas_of_scene scene =
     Array.init (Array.length scene * 3) (
       fun i ->
 	let face = scene.(i / 3) in
-	let vertex = face.vs.(i mod 3) in
+	let vertex = List.nth face.vs (i mod 3) in
 	vertex
     )
   in
@@ -123,11 +123,11 @@ let ba1_mapi f ar =
   done;
   ar'
 
-let map_face_vertices f face = { face with vs = Array.map f face.vs }
+let map_face_vertices f face = { face with vs = List.map f face.vs }
 
 let map_scene_vertices f scene = Array.map (map_face_vertices f) scene
 
-let fold_face_vertices f v0 face = Array.fold_left f v0 face.vs
+let fold_face_vertices f v0 face = List.fold_left f v0 face.vs
 
 let fold_scene_faces f v0 scene = Array.fold_left f v0 scene
 
