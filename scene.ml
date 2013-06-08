@@ -4,7 +4,6 @@ open RecVec
 type face_id = int
 
 type face = {
-  face_id     : face_id;
   vs	 : t list;
   normal : t;
   color	 : t;
@@ -33,7 +32,7 @@ type face_map = face IdMap.t
 type scene = face_map
 
 let add face scene =
-  let face_id = face.face_id in
+  let face_id = mk_face_id () in
   IdMap.add face_id face scene
 
 let empty = FaceMap.empty
@@ -58,7 +57,7 @@ let center_scene scene =
   let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
   map_scene_vertices (fun v -> v -.|. center) scene
 
-let face0 normal color = { face_id = mk_face_id (); vs = []; normal = normal; color = color; }
+let face0 normal color = { vs = []; normal = normal; color = color; }
 
 let split_one_face scene =
   let (key, face) = FaceMap.min_binding scene in
@@ -105,8 +104,7 @@ let make_grid' f scale width height : scene =
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ face_id = mk_face_id ();
-	  vs = [v1; v2; v3];
+	{ vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at x y; }
 	!scene;
@@ -114,8 +112,7 @@ let make_grid' f scale width height : scene =
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
       scene := add
-	{ face_id = mk_face_id ();
-	  vs = [v1; v2; v3];
+	{ vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
 	  color = color_at (x) (y); }
 	!scene;
