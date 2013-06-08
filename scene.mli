@@ -13,7 +13,7 @@ module FaceMap : Map.S with type key = face_id
 
 type face_map = face FaceMap.t
 
-type scene = face_map
+type scene
 
 val add : face -> scene -> scene
 
@@ -25,7 +25,7 @@ val map_scene_vertices : (vertex -> vertex) -> scene -> scene
 
 val fold_face_vertices : ('a -> vertex -> 'a) -> 'a -> face -> 'a
 
-val fold_scene_faces : ('a -> 'b -> 'a) -> 'a -> 'b FaceMap.t -> 'a
+val fold_scene_faces : ('a -> face -> 'a) -> 'a -> scene -> 'a
 
 val fold_scene_vertices : ('a -> vertex -> 'a) -> 'a -> scene -> 'a
 

@@ -44,25 +44,27 @@ module FaceMap = IdMap
 
 type face_map = face IdMap.t
 
-type scene = face_map
+type scene = {
+  s_faces : face_map;
+}
 
 let add face scene =
   let face_id = mk_face_id () in
-  IdMap.add face_id face scene
+  { scene with s_faces = IdMap.add face_id face scene.s_faces }
 
-let empty = FaceMap.empty
+let empty : scene = { s_faces = FaceMap.empty }
 
 let map_face_vertices f face = { face with vs = List.map f face.vs }
 
-let map_scene_vertices f scene = FaceMap.map (map_face_vertices f) scene
+let map_scene_vertices f scene = { scene with s_faces = FaceMap.map (map_face_vertices f) scene.s_faces }
 
 let fold_face_vertices f v0 face = List.fold_left f v0 face.vs
 
-let fold_scene_faces f v0 scene = FaceMap.fold (fun _ a b -> f b a) scene v0
+let fold_scene_faces f v0 { s_faces } = FaceMap.fold (fun _ a b -> f b a) s_faces v0
 
 let fold_scene_vertices f v0 scene = fold_scene_faces (fun v face -> fold_face_vertices f v face) v0 scene
 
-let num_scene_faces scene = IdMap.cardinal scene
+let num_scene_faces { s_faces } = IdMap.cardinal s_faces
 
 let num_scene_vertices scene = fold_scene_vertices (fun n _ -> (n + 1)) 0 scene
 
@@ -72,8 +74,8 @@ let center_scene scene =
   let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
   map_scene_vertices (fun v -> vertex_of_recvec (recvec_of_vertex v -.|. center)) scene
 
-let enum_scene_faces scene : (FaceMap.key * face) BatEnum.t =
-  FaceMap.enum scene
+let enum_scene_faces { s_faces } : (FaceMap.key * face) BatEnum.t =
+  FaceMap.enum s_faces
 
 let enum_scene_vertices scene =
   Enum.flatten (
@@ -95,7 +97,7 @@ let ba_of_array3' xs =
   ps
 
 let scene_of_function (f : float -> float -> float * RecVec.t) scale width height : scene =
-  let scene = ref IdMap.empty in
+  let scene = ref empty in
   for x = 0 to width - 1 do
     for y = 0 to height - 1 do
       let at x y = 
@@ -126,7 +128,7 @@ let scene_of_function (f : float -> float -> float * RecVec.t) scale width heigh
 	!scene;
     done
   done;
-  !scene    
+  !scene
 
 let bas_of_scene (scene : scene) =
   let flatten_vertices vs =
