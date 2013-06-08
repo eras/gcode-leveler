@@ -215,26 +215,29 @@ let main () =
 
   let scale = 0.3 in
   let scene =
-    Array.of_list (
-      List.map
-	(fun (a, b, c) ->
-	  let mk_v (_, ((x, y), z)) =
-	    { RecVec.x = scale *. x; y = scale *. y; z = z }
-	  in
-	  let v1 = mk_v a in
-	  let v2 = mk_v b in
-	  let v3 = mk_v c in
-	  Scene.(
-	    {
-	      face_id = mk_face_id ();
-	      vs = [v1; v2; v3];
-	      normal = RecVec.(unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)));
-	      color = { RecVec.x = Random.float 1.0; y = Random.float 1.0; z = Random.float 1.0 };
-	    }
-	  )
-	)
-	faces
-    )
+    List.fold_left 
+      (fun scene face ->
+	Scene.add face scene
+      )
+      Scene.empty
+      (List.map
+	 (fun (a, b, c) ->
+	   let mk_v (_, ((x, y), z)) =
+	     { RecVec.x = scale *. x; y = scale *. y; z = z }
+	   in
+	   let v1 = mk_v a in
+	   let v2 = mk_v b in
+	   let v3 = mk_v c in
+	   Scene.(
+	     {
+	       face_id = mk_face_id ();
+	       vs = [v1; v2; v3];
+	       normal = RecVec.(unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)));
+	       color = { RecVec.x = Random.float 1.0; y = Random.float 1.0; z = Random.float 1.0 };
+	     }
+	   )
+	 )
+	 faces)
   in
   let size = scale *. 1200.0 in
   Visualize.run (((0.0, 200.0, 400.0)), Scene.center_scene scene);

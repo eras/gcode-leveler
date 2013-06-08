@@ -1,3 +1,4 @@
+open Batteries
 open RecVec
 
 type face_id = int
@@ -16,19 +17,63 @@ let mk_face_id =
     !face_id
 
 module IdMap =
-struct
-  type t = id
-  let compare (x:t) y = compare x y
-end
+  Map.Make (
+    struct
+      type t = face_id
+      let compare (x:t) y = compare x y
+    end
+  )
 
-module FaceMap = 
-struct
-  type ('normal, 'color) t
-end
+module FaceMap = IdMap
 
-type scene = face array
+(* module FaceMap : Map.S with type t = face IdMap.t = IdMap *)
+
+type face_map = face IdMap.t
+
+type scene = face_map
+
+let add face scene =
+  let face_id = face.face_id in
+  IdMap.add face_id face scene
+
+let empty = FaceMap.empty
+
+let map_face_vertices f face = { face with vs = List.map f face.vs }
+
+let map_scene_vertices f scene = FaceMap.map (map_face_vertices f) scene
+
+let fold_face_vertices f v0 face = List.fold_left f v0 face.vs
+
+let fold_scene_faces f v0 scene = FaceMap.fold (fun _ a b -> f b a) scene v0
+
+let fold_scene_vertices f v0 scene = fold_scene_faces (fun v face -> fold_face_vertices f v face) v0 scene
+
+let num_scene_faces scene = IdMap.cardinal scene
+
+let num_scene_vertices scene = fold_scene_vertices (fun n _ -> (n + 1)) 0 scene
+
+let center_scene scene =
+  let (sum, count) = fold_scene_vertices (fun (sum, count) v -> (sum +.|. v, count + 1)) (vector0, 0) scene in
+  let count = float count in
+  let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
+  map_scene_vertices (fun v -> v -.|. center) scene
 
 let face0 normal color = { face_id = mk_face_id (); vs = []; normal = normal; color = color; }
+
+let split_one_face scene =
+  let (key, face) = FaceMap.min_binding scene in
+  let (_, _, scene) = FaceMap.split key scene in
+  (face, scene)
+
+let enum_scene_faces scene : (FaceMap.key * face) BatEnum.t =
+  FaceMap.enum scene
+
+let enum_scene_vertices scene =
+  Enum.flatten (
+    Enum.map
+      (fun (_, face) -> List.enum face.vs)
+      (enum_scene_faces scene)
+  )
 
 let ba_of_array3' xs =
   let ps = Bigarray.(Array1.create float32 c_layout (3 * Array.length xs)) in
@@ -42,9 +87,8 @@ let ba_of_array3' xs =
   ) xs;
   ps
 
-let make_grid' f scale width height =
-  let size = width * height in 
-  let faces = Array.make (size * 2) (face0 vector0 vector0) in
+let make_grid' f scale width height : scene =
+  let scene = ref IdMap.empty in
   for x = 0 to width - 1 do
     for y = 0 to height - 1 do
       let at x y = 
@@ -57,51 +101,50 @@ let make_grid' f scale width height =
 	let y' = float y /. float height in
 	snd (f x' y')
       in
-      let i = 2 * (x + y * width) in
       let v1 = at (x + 0) (y + 0) in
       let v2 = at (x + 0) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
-      faces.(i + 0) <-
+      scene := add
 	{ face_id = mk_face_id ();
 	  vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	  color = color_at x y; };
+	  color = color_at x y; }
+	!scene;
       let v1 = at (x + 0) (y + 1) in
       let v2 = at (x + 1) (y + 1) in
       let v3 = at (x + 1) (y + 0) in
-      faces.(i + 1) <-
+      scene := add
 	{ face_id = mk_face_id ();
 	  vs = [v1; v2; v3];
 	  normal = unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1));
-	  color = color_at (x) (y); };
+	  color = color_at (x) (y); }
+	!scene;
     done
   done;
-  faces    
+  !scene    
 
-let bas_of_scene scene =
+let bas_of_scene (scene : scene) =
+  let flatten_vertices vs =
+    Array.concat (List.of_enum (Enum.map (fun {x; y; z} -> [|x; y; z|]) vs))
+  in
+  let flatten_vertices_thrice vs =
+    Array.concat (List.of_enum (Enum.map (fun {x; y; z} -> [|x; y; z; x; y; z; x; y; z|]) vs))
+  in
+  let mk_big ar = Bigarray.Array1.of_array Bigarray.float32 Bigarray.c_layout ar in
   let vertices =
-    Array.init (Array.length scene * 3) (
-      fun i ->
-	let face = scene.(i / 3) in
-	let vertex = List.nth face.vs (i mod 3) in
-	vertex
-    )
+    let vs = enum_scene_vertices scene in
+    let vs = flatten_vertices vs in
+    mk_big vs
   in
   let normals =
-    Array.init (Array.length scene * 3) (
-      fun i ->
-	let face = scene.(i / 3) in
-	face.normal
-    )
+    let faces = enum_scene_faces scene in
+    mk_big (flatten_vertices (Enum.map (fun (_, face) -> face.normal) faces))
   in
   let colors =
-    Array.init (Array.length scene * 3) (
-      fun i ->
-	let face = scene.(i / 3) in
-	face.color
-    )
+    let faces = enum_scene_faces scene in
+    mk_big (flatten_vertices_thrice (Enum.map (fun (_, face) -> face.color) faces))
   in
-  (ba_of_array3' vertices, ba_of_array3' normals, ba_of_array3' colors)
+  (vertices, normals, colors)
 
 let make_rgb_grid f width height =
   let size = width * height in 
@@ -144,19 +187,3 @@ let ba1_mapi f ar =
     set ar' x (f x (get ar x))
   done;
   ar'
-
-let map_face_vertices f face = { face with vs = List.map f face.vs }
-
-let map_scene_vertices f scene = Array.map (map_face_vertices f) scene
-
-let fold_face_vertices f v0 face = List.fold_left f v0 face.vs
-
-let fold_scene_faces f v0 scene = Array.fold_left f v0 scene
-
-let fold_scene_vertices f v0 scene = fold_scene_faces (fun v face -> fold_face_vertices f v face) v0 scene
-
-let center_scene scene =
-  let (sum, count) = fold_scene_vertices (fun (sum, count) v -> (sum +.|. v, count + 1)) (vector0, 0) scene in
-  let count = float count in
-  let center = { x = sum.x /. count; y = sum.y /. count; z = sum.z /. count } in
-  map_scene_vertices (fun v -> v -.|. center) scene
