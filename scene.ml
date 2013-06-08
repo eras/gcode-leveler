@@ -59,11 +59,6 @@ let center_scene scene =
 
 let face0 normal color = { vs = []; normal = normal; color = color; }
 
-let split_one_face scene =
-  let (key, face) = FaceMap.min_binding scene in
-  let (_, _, scene) = FaceMap.split key scene in
-  (face, scene)
-
 let enum_scene_faces scene : (FaceMap.key * face) BatEnum.t =
   FaceMap.enum scene
 
