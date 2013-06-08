@@ -86,7 +86,7 @@ let ba_of_array3' xs =
   ) xs;
   ps
 
-let make_grid' f scale width height : scene =
+let scene_of_function f scale width height : scene =
   let scene = ref IdMap.empty in
   for x = 0 to width - 1 do
     for y = 0 to height - 1 do
