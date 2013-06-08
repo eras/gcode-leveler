@@ -238,7 +238,6 @@ let main () =
 	 )
 	 faces)
   in
-  let size = scale *. 1200.0 in
   Visualize.run (((0.0, 200.0, 400.0)), Scene.center_scene scene);
 
   ()
