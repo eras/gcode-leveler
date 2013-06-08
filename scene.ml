@@ -42,19 +42,25 @@ module IdMap =
 
 module FaceMap = IdMap
 
+module VertexMap = IdMap
+
 (* module FaceMap : Map.S with type t = face IdMap.t = IdMap *)
 
-type face_map = face IdMap.t
+type face_map = face FaceMap.t
+
+type vertex_map = vertex VertexMap.t
 
 type scene = {
   s_faces : face_map;
+  s_vertices : vertex_map;
 }
 
 let add face scene =
   let face_id = mk_face_id () in
-  { scene with s_faces = IdMap.add face_id face scene.s_faces }
+  { s_faces = FaceMap.add face_id face scene.s_faces;
+    s_vertices = List.fold_left (fun vs ((vertex_id, vector) as vertex) -> VertexMap.add vertex_id vertex vs) scene.s_vertices face.vs; }
 
-let empty : scene = { s_faces = FaceMap.empty }
+let empty : scene = { s_faces = FaceMap.empty; s_vertices = VertexMap.empty; }
 
 let map_face_vertices f face = { face with vs = List.map f face.vs }
 
