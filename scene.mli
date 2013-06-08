@@ -5,7 +5,9 @@ type vertex
 
 val vertex_of_recvec : RecVec.t -> vertex
 
-type face = { vs : vertex list; normal : RecVec.t; color : RecVec.t; }
+type face
+
+val face : vertex list -> RecVec.t -> RecVec.t -> face
 
 module FaceMap : Map.S with type key = face_id
 

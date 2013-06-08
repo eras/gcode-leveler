@@ -12,6 +12,8 @@ type face = {
   color	 : RecVec.t;
 }
 
+let face vs normal color = { vs; normal; color }
+
 let mk_face_id =
   let face_id = ref 0 in
   fun () ->
