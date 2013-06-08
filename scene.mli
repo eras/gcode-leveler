@@ -7,7 +7,8 @@ val vertex_of_recvec : RecVec.t -> vertex
 
 type face
 
-val face : vertex list -> RecVec.t -> RecVec.t -> face
+(** [triangle vertices normal color] *)
+val triangle : (vertex * vertex * vertex) -> RecVec.t -> RecVec.t -> face
 
 type scene
 

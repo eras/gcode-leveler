@@ -229,10 +229,8 @@ let main () =
 	   let v2 = mk_v b in
 	   let v3 = mk_v c in
 	   Scene.(
-	     face 
-	       [vertex_of_recvec v1;
-		vertex_of_recvec v2;
-		vertex_of_recvec v3]
+	     triangle 
+	       (vertex_of_recvec v1, vertex_of_recvec v2, vertex_of_recvec v3)
 	       RecVec.(unit3' (cross3' (v3 -.|. v1) (v2 -.|. v1)))
 	       { RecVec.x = Random.float 1.0; y = Random.float 1.0; z = Random.float 1.0 }
 	   )

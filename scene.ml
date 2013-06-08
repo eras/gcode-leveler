@@ -12,7 +12,9 @@ type face = {
   color	 : RecVec.t;
 }
 
-let face vs normal color = { vs; normal; color }
+type triangle = face
+
+let triangle (v1, v2, v3) normal color = { vs = [v1; v2; v3]; normal; color }
 
 let mk_face_id =
   let face_id = ref 0 in
