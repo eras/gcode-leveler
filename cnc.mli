@@ -12,6 +12,8 @@ val where : (float * float * float) request
 val motors_off : unit request
 val synchronize : unit request
 
+val power : bool -> unit request
+
 val wait : t -> 'a request -> 'a
 val ignore : t -> 'a request -> unit
 val async : t -> 'a request -> ('a -> unit) -> unit
