@@ -1,7 +1,7 @@
 # Gcode Leveler #
 
 gcode-leveler attempts to overcome non-leveled and non-flat printing
-surfaces by applying a formulate to all Z heights in a gcode file. It
+surfaces by applying a formula to all Z heights in a gcode file. It
 also interpolates long moves into smaller parts, so that the Z
 adjustment can be targeted against those as well.
 
