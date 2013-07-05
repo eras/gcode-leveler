@@ -1,6 +1,8 @@
 open BatPervasives
 open Utils
 
+let ( **> ) a b = a b
+
 type linreg_kernel = {
   lr_theta	: float array;
   lr_normalize	: float array -> float array;

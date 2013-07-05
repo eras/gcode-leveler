@@ -1,6 +1,14 @@
-open BatPervasives
-open BatStd
+open Batteries
 open Utils
+
+module List =
+struct
+  include BatList
+  include BatList.Labels
+end
+
+let ( **> ) a b = a b
+let ( -| ) f f2 x = f (f2 x)
 
 module Vector =
 struct
@@ -355,9 +363,9 @@ let line_to_bounds ((x1, y1), (x2, y2)) x =
 		((x2, y2), (x2, y1));
 		((x2, y1), (x1, y1))] in
   let open Vector in
-  let intersects = BatList.filter_map (intersect_u_float x) bounds in
+  let intersects = List.filter_map (intersect_u_float x) bounds in
   let ahead, behind = List.partition (fun (dem, _) -> dem >= 0.0) (List.map fst intersects) in
-  let sort neg = BatList.sort ~cmp:(fun (a, _) (b, _) -> if neg then compare b a else compare a b) in
+  let sort neg = List.stable_sort ~cmp:(fun (a, _) (b, _) -> if neg then compare b a else compare a b) in
   let ahead, behind = sort false ahead, sort true behind in
     match behind, ahead with
       | a::_, b::_ -> (Lazy.force (snd a), Lazy.force (snd b))
@@ -462,10 +470,10 @@ let edge_points image_dims image =
   let spans = 
     List.rev (
       snd (
-	List.fold_left
+	BatList.fold_left
 	  (fun (offset, offsets) (ab, pxs) ->
-	     let span = (ab, ab_length ab) in
-	       (offset + Array.length pxs, (((offset, offset + Array.length pxs - 1), span)::offsets))
+	    let span = (ab, ab_length ab) in
+	    (offset + Array.length pxs, (((offset, offset + Array.length pxs - 1), span)::offsets))
 	  )
 	  (Array.length last, [])
 	  (List.combine edges edge_pxs)
@@ -550,7 +558,7 @@ let analyze surface rgb24 =
   (* 	     (average pxs, ab) *)
   (* 	) |> List.sort compare |> List.map snd *)
   (* in *)
-  (* let point_pairs_good = BatList.take 4 point_pairs_good in *)
+  (* let point_pairs_good = List.take 4 point_pairs_good in *)
   let angle_offsets = List.map (angle_offset_of_line image_dims) point_pairs_good in
     List.iter 
       (fun at ->
@@ -642,9 +650,9 @@ let similar_angle a b = abs_float (a -. b) < (10.0 /. 180.0 *. pi)
 
 let offsets_of_angle data base_angle =
   let similar_angle_offset base_angle (angle, _offset) = similar_angle base_angle angle in
-    BatList.filter_map
+    List.filter_map
       (fun (z_offset, aos) ->
-	 match BatList.Exceptionless.find (similar_angle_offset base_angle) aos with
+	 match List.Exceptionless.find (similar_angle_offset base_angle) aos with
 	   | None -> None
 	   | Some (_, offset) -> Some (z_offset, offset))
       data
@@ -654,7 +662,7 @@ let analyze_data (data : (z_offset * angle_offset list) list) =
     compress_consecutive
       similar_angle
       (fun a b -> (a +. b) /. 2.0)
-      (List.sort compare **>
+      (BatList.sort compare **>
 	 List.map fst (List.concat (List.map snd data)))
   in
   let angle_zofsofs = List.map (fun angle -> (angle, offsets_of_angle data angle)) angles in
@@ -677,10 +685,10 @@ let query (surface, kernels) rgb24 =
   let aos = analyze surface rgb24 in
   let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
   let z_offsets =
-    BatList.filter_map
+    List.filter_map
       (fun (angle, kernel) ->
 	 Printf.printf "angle: %f\n%!" (deg_of_rad angle);
-	 let offsets = Array.of_list (BatList.filter_map (fun (angle', offset) ->
+	 let offsets = Array.of_list (List.filter_map (fun (angle', offset) ->
 							    if similar_angle angle angle'
 							    then Some offset
 							    else None) aos) in
@@ -749,7 +757,7 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
 	  let frame = (V4l2.get_frame video)#decode in
-	    BatStd.output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
+	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
 	    results.(yc).(xc) <- Some (apply frame)
       done
     done;
@@ -772,7 +780,7 @@ let auto_calibrate surface cnc video dims max_deviation steps =
 	let rgb24 = (rgb24_of_string dims frame) in
 	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
 	  Sdlvideo.update_rect surface;
-	  BatStd.output_file (Printf.sprintf "%+.2f.raw" z_offset) frame;
+	  output_file (Printf.sprintf "%+.2f.raw" z_offset) frame;
 	  samples := (lazy rgb24, z_offset)::!samples;
     done;
     Cnc.wait cnc (Cnc.move [`Z max_deviation]);

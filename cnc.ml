@@ -26,9 +26,9 @@ struct
   let make mutex value = (value, mutex)
   let access (value, mutex) f = 
     Mutex.lock mutex;
-    let v = BatStd.wrap f value in
+    let v = wrap f value in
       Mutex.unlock mutex;
-      BatStd.ok v
+      ok v
 end
 
 let register_of_char = function
