@@ -22,7 +22,7 @@ external v4l2_stop : t'c -> unit = "v4l2_stop"
 
 external v4l2_get_frame : t'c -> array_frame = "v4l2_get_frame"
 
-external v4l2_decode_frame : array_frame -> rgb_array_frame = "v4l2_decode_frame"
+external v4l2_decode_mjpeg : array_frame -> rgb_array_frame = "v4l2_decode_mjpeg"
 
 let destruct t =
   if t.started then v4l2_stop t.t'c;
@@ -74,6 +74,6 @@ let get_frame t =
   in
     (object
        method raw = string_of_bigarray raw
-       method decode = string_of_bigarray (v4l2_decode_frame raw)
+       method decode = string_of_bigarray (v4l2_decode_mjpeg raw)
      end)
 

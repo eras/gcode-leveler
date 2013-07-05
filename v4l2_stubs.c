@@ -446,7 +446,7 @@ v4l2_jpeg_error_exit(j_common_ptr cinfo)
 }
 
 value
-v4l2_decode_frame(value frame)
+v4l2_decode_mjpeg(value frame)
 {
   CAMLparam1(frame);
   CAMLlocal1(result);
