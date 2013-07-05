@@ -42,7 +42,7 @@ let start t =
     | false ->
 	v4l2_start t.t'c;
 	t.started <- true
-    | true _ ->
+    | true ->
 	()
 
 let stop t = 
