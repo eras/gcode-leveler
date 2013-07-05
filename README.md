@@ -23,10 +23,10 @@ also flattening. Once you have those, you pass them to leveler with -p
 (you can also adjust the global offset with -ofs). Input goes to
 standard input, output goes to standard output.
 
-% gcode-leveler -ofs 0.1 \
-  -p 0,150,-0.05 -p 80,150,0.2 -p 160,150,0.15 \
-  -p 0,80,0.0 -p 80,80,0.2 -p 180,80,0.15 \
-  -p 0,0,0 -p 80,0,0.1 -p 160,0,0.2 < teapot.gcode > teapot.leveled.gcode
+	% gcode-leveler -ofs 0.1 \
+	-p 0,150,-0.05 -p 80,150,0.2 -p 160,150,0.15 \
+	-p 0,80,0.0 -p 80,80,0.2 -p 180,80,0.15 \
+	-p 0,0,0 -p 80,0,0.1 -p 160,0,0.2 < teapot.gcode > teapot.leveled.gcode
 
 And now you're ready to print! Note that this is development quality
 software and I'm not responsible if the codes command your printer to
