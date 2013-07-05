@@ -1,3 +1,4 @@
+open Batteries
 open V4l2
 
 let main () =
@@ -8,8 +9,8 @@ let main () =
       let raw = frame#raw in
       let decoded = frame#decode in
 	Printf.printf "%d %d\n%!" (String.length raw) (String.length decoded);
-	BatStd.output_file (Printf.sprintf "%04d.jpg" i) raw;
-	BatStd.output_file (Printf.sprintf "%04d.raw" i) decoded;
+	output_file (Printf.sprintf "%04d.jpg" i) raw;
+	output_file (Printf.sprintf "%04d.raw" i) decoded;
     done;
     Printf.printf "Complete\n%!";
     stop v
