@@ -264,6 +264,9 @@ let synchronize =
 let set_power state =
   send (if state then "M80" else "M81") unit_response
 
+let set_port port value =
+  send (Printf.sprintf "M42 P%d S%d" port value) unit_response
+
 let async t (request : 'a request) (callback : 'a -> unit) =
   let (issue, handler) = request () in
   let handler = handler callback in

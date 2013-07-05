@@ -13,6 +13,7 @@ val motors_off : unit request
 val synchronize : unit request
 
 val set_power : bool -> unit request
+val set_port : int -> int -> unit request
 
 val wait : t -> 'a request -> 'a
 val ignore : t -> 'a request -> unit
