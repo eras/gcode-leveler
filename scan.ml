@@ -606,7 +606,9 @@ let scan _ =
 	  Printf.printf "exception: %s\nbacktrace: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace ()) );
       Cnc.wait cnc (Cnc.move [`X x; `Y y; `Z z]);
       Cnc.wait cnc disable_laser;
-      Cnc.wait cnc Cnc.motors_off
+      Cnc.wait cnc Cnc.motors_off;
+      Cnc.wait cnc (Cnc.set_power false);
+      ()
 	(* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
 	(* Unix.sleep 1 *)
   
