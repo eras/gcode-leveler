@@ -66,22 +66,29 @@ let string_of_bigarray array_frame =
     s
 
 let get_frame t = 
+  let rec get_nonzero_frame () =
+    let frame = v4l2_get_frame t.t'c in
+    let len = Array1.dim frame in
+    if len = 0
+    then get_nonzero_frame ()
+    else frame
+  in
   let raw =
     match t.started with
-      | false ->
-	  v4l2_start t.t'c;
-	  let image = v4l2_get_frame t.t'c in
-	    v4l2_stop t.t'c;
-	    image
-      | true ->
-	  v4l2_get_frame t.t'c
+    | false ->
+      v4l2_start t.t'c;
+      let image = get_nonzero_frame () in
+      v4l2_stop t.t'c;
+      image
+    | true ->
+      get_nonzero_frame ()
   in
   let format = v4l2_get_format t.t'c in
-    (object
-       method raw = string_of_bigarray raw
-       method rgb = 
-	 match format with
-	 | "MJPG" -> string_of_bigarray (v4l2_decode_mjpeg raw)
-	 | "YUYV" -> string_of_bigarray (v4l2_decode_yuv422 raw)
-	 | x -> failwith ("invalid format " ^ x)
-     end)
+  (object
+    method raw = string_of_bigarray raw
+    method rgb = 
+      match format with
+      | "MJPG" -> string_of_bigarray (v4l2_decode_mjpeg raw)
+      | "YUYV" -> string_of_bigarray (v4l2_decode_yuv422 raw)
+      | x -> failwith ("invalid format " ^ x)
+   end)
