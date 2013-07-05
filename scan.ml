@@ -62,68 +62,6 @@ let wrap_range max x =
   then max + mx
   else mx
 
-let compress_consecutive condition combine xs =
-  let rec loop behind ahead prev =
-    match behind, ahead, prev with
-      | [], _::_, Some _ -> assert false
-      | x::xs, y::ys, Some p when condition p y ->
-	  loop (x::xs) ys (Some y)
-      | x::xs, y::ys, Some p (* when y > p + 1 *) ->
-	  loop (combine x p::xs) (y::ys) None
-      | xs, y::ys, None ->
-	  loop (y::xs) ys (Some y)
-      | xs, [], _ ->
-	  xs
-  in
-    List.rev (loop [] xs None)
-
-let local_maximas ~limit xs ofs0 ofs1 window_size = 
-  let module FloatMap = BatMap.Make(BatFloat) in
-  let window_contents = Array.make window_size 0.0 in
-  let window_map = ref FloatMap.empty in
-  let window_add_ofs = ref 0 in
-  let window_remove_ofs = ref 0 in
-  let window_num_els = ref 0 in
-  let remove () =
-    let x = window_contents.(!window_remove_ofs) in
-      (* debug "Removing %f at %d\n" x !window_remove_ofs; *)
-      incr_wrap window_size window_remove_ofs;
-      decr window_num_els;
-      let v = FloatMap.find x !window_map in
-	decr v;
-	if !v = 0 then
-	  window_map := FloatMap.remove x !window_map
-  in
-  let add x =
-    if !window_num_els > 0 && !window_add_ofs = !window_remove_ofs then
-      remove ();
-    (* debug "Adding %f at %d\n" x !window_add_ofs; *)
-    window_contents.(!window_add_ofs) <- x;
-    incr_wrap window_size window_add_ofs;
-    incr window_num_els;
-    try incr (FloatMap.find x !window_map)
-    with Not_found -> window_map := FloatMap.add x (ref 1) !window_map
-  in 
-  let wrap_xs = wrap_range (Array.length xs) in
-    for c = 0 to window_size - 1 do
-      add xs.(wrap_xs (ofs0 + c - window_size / 2));
-    done;
-    let maximas = ref [] in
-      for x_at = ofs0 to ofs1 do 
-	let (range_max, _) = FloatMap.max_binding !window_map in
-	  (* debug "%d %f\n" x_at range_max; *)
-	  if xs.(x_at) > range_max *. 0.9 && limit xs.(x_at) then
-	    maximas := x_at ::!maximas;
-	  add xs.(wrap_xs (x_at + window_size / 2));
-      done;
-      compress_consecutive (fun a b -> b = a + 1) (fun a b -> (a + b) / 2) (List.sort compare !maximas)
-
-let nth_step ((v0, v1), n) m =
-  let open Vector in
-  let delta_v = v1 -| v0 in
-  let step_v = delta_v /|. float n in
-    v0 +| (step_v *|. float m)
-
 let fold_along_vector f x0 ((v0, v1), n) =
   let open Vector in
   let delta_v = v1 -| v0 in
@@ -378,138 +316,6 @@ let rec map_scan_list f xs =
     | [] -> []
     | x::xs -> f x xs::map_scan_list f xs
 
-let map_pairs (f : 'a -> 'a -> 'b) (xxs : 'a list list) : 'b list =
-  (List.concat -| List.concat -| List.concat -| List.concat) (
-    map_scan_list
-      (fun x1s yys ->
-	 List.map 
-	   (fun x2s ->
-	      List.map 
-		(fun x1 ->
-		   List.map
-		     (fun x2 ->
-			if x1 != x2 
-			then [f x1 x2]
-			else []
-		     )
-		     x2s
-		)
-		x1s
-	   )
-	   yys
-      )
-      xxs
-  )
-
-let pairwise (xs : 'a list list) : ('a * 'a) list =
-  map_pairs (fun a b -> (a, b)) xs
-
-let line_to_bounds ((x1, y1), (x2, y2)) x =
-  let bounds = [((x1, y1), (x1, y2));
-		((x1, y2), (x2, y2));
-		((x2, y2), (x2, y1));
-		((x2, y1), (x1, y1))] in
-  let open Vector in
-  let intersects = List.filter_map (intersect_u_float x) bounds in
-  let ahead, behind = List.partition (fun (dem, _) -> dem >= 0.0) (List.map fst intersects) in
-  let sort neg = List.stable_sort ~cmp:(fun (a, _) (b, _) -> if neg then compare b a else compare a b) in
-  let ahead, behind = sort false ahead, sort true behind in
-    match behind, ahead with
-      | a::_, b::_ -> (Lazy.force (snd a), Lazy.force (snd b))
-      | _ -> assert false
-
-let line_of_angle_offset (w, h) (angle, offset) =
-  let (w, h) = (float w, float h) in
-  let base_x, base_y = cos angle, sin angle in
-  let offset_v = Vector.(rot90 (base_x, base_y) *|. offset) in
-    line_to_bounds ((0.0, 0.0), (w, h)) 
-      Vector.((w /. 2.0, h /. 2.0) +| offset_v,
-	      (w /. 2.0 +. base_x, h /. 2.0 +. base_y) +| offset_v)
-
-let angle_offset_of_line (w, h) (a, b) =
-  let origo = Vector.((float w, float h) /|. 2.0) in
-  let (dx, dy) = Vector.(b -| a) in
-  let base = Vector.rot90 (Vector.unit (dx, dy)) in
-  let angle = atan2 dy dx in
-  let offset = Vector.dot2 base Vector.(a -| origo) in
-    (angle, offset)
-
-let avg_of_line image (w, h) (angle, offset) =
-  let line = line_of_angle_offset (w, h) (angle, offset) in
-  let span = (line, ab_length line) in
-  let pxs = pixels_along_vector image span in
-  let avg = average pxs in
-    avg
-
-(* clamp high values *)
-let bounded_avg_of_line image (w, h) (angle, offset) =
-  let line = line_of_angle_offset (w, h) (angle, offset) in
-  let span = (line, ab_length line) in
-  let pxs = pixels_along_vector image span in
-  let avg = average pxs in
-  let threshold = max (part 0.5 pxs) (avg *. 1.1) in
-  (* let threshold = avg *. 1.1 in *)
-  let pxs' = BatArray.map (fun x -> if x >= threshold then threshold else x) pxs in
-  let avg' = average pxs' in
-    avg'
-
-let angle_offset_cost image (w, h) (angle, offset) =
-  let open BatEnum in
-  let get_avg ofs = avg_of_line image (w, h) (angle, offset +. ofs) in
-  let rec scan_offset n =
-    if n < 10 then
-      let ofs = float n *. 2.0 in
-      let avg1 = get_avg ofs in
-      let avg2 = get_avg (~-. ofs) in
-      let value = avg1 *. avg2 in
-	if value < 0.2
-	then 0.0
-	else value +. scan_offset (n + 1)
-    else
-      0.0
-  in
-  let avg0 = get_avg 0.0 in
-    avg0 *. avg0 +. scan_offset 1
-
-let optimize_angle_offset report image dims (angle, offset) =
-  let cost x =
-    let c = angle_offset_cost image dims x in
-      (* debug "%f %f -> %f\n" (fst x) (snd x) c; *)
-      c
-  in
-  let step_angle (angle, offset) =
-    let g = 
-      Optimize.derivate ~epsilon:(1.0 /. 180.0 *. pi)
-	(fun x -> cost (x, offset))
-    in
-    let step = clamp (-0.005) 0.005 (g angle *. 0.05) in
-      debug "Stepping angle %f\n" step;
-      angle +. step
-  in
-  let step_offset (angle, offset) =
-    let g = 
-      Optimize.derivate ~epsilon:1.0
-	(fun x -> cost (angle, x))
-    in
-    let step = clamp (-1.0) 1.0 (g offset *. 100.0) in
-      debug "Stepping offset %f\n" step;
-      offset +. step
-  in
-  let step step (angle, offset) = 
-    debug "step %d\n" step;
-    let angle = step_angle (angle, offset) in
-    let offset = step_offset (angle, offset) in
-      report step (angle, offset);
-      (angle, offset)
-  in
-  let x = Optimize.optimize ~max_steps:200 ~epsilon:0.0001 (angle, offset) cost step in
-    debug "Done optimizing\n";
-    x
-
-let string_of_span (((x1, y1), (x2, y2)), len) =
-  Printf.sprintf "(((%f, %f), (%f, %f)), %d)" x1 y1 x2 y2 len
-
-
 (** [find_image_regions condition (width, height) image] finds
     consecutive regions satisfying [condition (image x y)], where x
     ranges 0..width-1 and y 0..height-1. *)
@@ -570,8 +376,6 @@ let find_image_regions condition (w, h) image =
 
 let analyze surface rgb24 =
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
-  let image_gray = (fun_of_gray8 -| index8_of_rgb24 gray8_of_rgb24) rgb24 in
-  let image'low = part 0.5 (array_of_image image_dims image_gray) in
   let image_filtered = 
     let filter () =
       let img = (fun_of_gray8 -| index8_of_rgb24 (filter_color (255, 71, 0) 0.05)) rgb24 in
@@ -583,7 +387,6 @@ let analyze surface rgb24 =
       timing "filter" filter ()
   in
   let image_surface = surface_of_gray_fn image_dims image_filtered in
-  let map_to_surface (x, y) = (int_of_float x, h - int_of_float y - 1) in
   (* Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) (); *)
   Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
   Sdlvideo.update_rect surface;
@@ -628,7 +431,7 @@ let query (surface, kernel) rgb24 =
   let point = analyze surface rgb24 in
   match point with
   | None -> failwith "Cannot find point, cannot query"
-  | Some ((x, y) as point) ->
+  | Some ((x, y) as _point) ->
     debug "point: (%f, %f)\n%!" x y;
     let z_offset =
       Optimize.linreg_hypo
