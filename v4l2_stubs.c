@@ -21,6 +21,10 @@
 #include <caml/fail.h>
 #include <caml/bigarray.h>
 
+typedef struct {
+  __u8 r, g, b;
+} RGB;
+
 struct buffer {
   void*  start;
   size_t length;
@@ -32,6 +36,7 @@ struct t {
   int			n_buffers;
   int			buffer_size;
   struct buffer*	buffers;
+  __u32                 pixel_format;
   
   char*			(*start)(struct t*);
   char*			(*stop)(struct t*);
@@ -366,7 +371,8 @@ v4l2_open(value name, value width, value height)
 
   if (fmt.fmt.pix.width != Int_val(width) ||
       fmt.fmt.pix.height != Int_val(height) ||
-      fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG) {
+      (fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG &&
+       fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_YUYV)) {
     snprintf(msg_buf, sizeof(msg_buf),
              "v4l2_open: could not set desired size or pixel format. Actual pixel format: %c%c%c%c",
              (fmt.fmt.pix.pixelformat >> 0) & 0xff,
@@ -377,6 +383,7 @@ v4l2_open(value name, value width, value height)
     goto cleanup;
   }
 
+  t->pixel_format = fmt.fmt.pix.pixelformat;
   t->image_size = fmt.fmt.pix.sizeimage;
 
   msg = init_mmap(t);
@@ -443,6 +450,72 @@ v4l2_jpeg_error_exit(j_common_ptr cinfo)
 {
   struct custom_jpeg_decompress_struct* custom_dec = (void*) cinfo;
   longjmp(custom_dec->decode_env, 1);
+}
+
+static inline int clamp_0_255(int x)
+{
+  return 
+    x < 0 ? 0 :
+    x > 255 ? 255 :
+    x;
+}
+
+static inline RGB rgb_of_yuv(unsigned char Y, unsigned char U, unsigned char V)
+{
+  int C, D, E;
+  int R, G, B;
+
+  // from http://en.wikipedia.org/wiki/YUV#Converting_between_Y.27UV_and_RGB
+  C = (int) Y - 16;
+  D = (int) U - 128;
+  E = (int) V - 128;
+
+  R = clamp_0_255(( 298 * C + 409 * E + 128) >> 8);
+  G = clamp_0_255(( 298 * C - 100 * D - 208 * E + 128) >> 8);
+  B = clamp_0_255(( 298 * C + 516 * D + 128) >> 8) ;
+
+  RGB rgb = { R, G, B };
+  return rgb;
+}
+
+value
+v4l2_decode_yuv422(value frame)
+{
+  CAMLparam1(frame);
+  CAMLlocal1(result);
+  void* orig = Data_bigarray_val(frame);
+  size_t bytes = Caml_ba_array_val(frame)->dim[0];
+  __u8* result_ptr;
+
+  result = alloc_bigarray_dims(CAML_BA_UINT8 | CAML_BA_C_LAYOUT, 1,
+                               NULL, 3 * (bytes / 2));
+
+  result_ptr = (void*) Data_bigarray_val(result);
+
+  {
+    size_t rgb_ofs = 0;
+    size_t ofs;
+    for (ofs = 0; ofs < bytes; ofs += 4) {
+      __u8* yuv = orig + ofs;
+      __u8 y1 = yuv[0];
+      __u8 u  = yuv[1];
+      __u8 y2 = yuv[2];
+      __u8 v  = yuv[3];
+
+      RGB rgb1 = rgb_of_yuv(y1, u, v);
+      RGB rgb2 = rgb_of_yuv(y2, u, v);
+
+      result_ptr[rgb_ofs++] = rgb1.r;
+      result_ptr[rgb_ofs++] = rgb1.g;
+      result_ptr[rgb_ofs++] = rgb1.b;
+      result_ptr[rgb_ofs++] = rgb2.r;
+      result_ptr[rgb_ofs++] = rgb2.g;
+      result_ptr[rgb_ofs++] = rgb2.b;
+    }
+    assert(rgb_ofs <= 3 * (bytes / 2));
+  }
+
+  CAMLreturn(result);
 }
 
 value
@@ -552,6 +625,22 @@ v4l2_stop(value t)
     caml_failwith(msg);
   }
   CAMLreturn(0);
+}
+
+value
+v4l2_get_format(value t)
+{
+  CAMLparam1(t);
+  CAMLlocal1(result);
+  struct t* t_ = (struct t*) t;
+  char buffer[5];
+  buffer[0] = (t_->pixel_format >> 0) & 0xff;
+  buffer[1] = (t_->pixel_format >> 8) & 0xff;
+  buffer[2] = (t_->pixel_format >> 16) & 0xff;
+  buffer[3] = (t_->pixel_format >> 24) & 0xff;
+  buffer[4] = 0;
+  result = caml_copy_string(buffer);
+  CAMLreturn(result);
 }
 
 value

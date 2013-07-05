@@ -24,6 +24,10 @@ external v4l2_get_frame : t'c -> array_frame = "v4l2_get_frame"
 
 external v4l2_decode_mjpeg : array_frame -> rgb_array_frame = "v4l2_decode_mjpeg"
 
+external v4l2_decode_yuv422 : array_frame -> rgb_array_frame = "v4l2_decode_yuv422"
+
+external v4l2_get_format : t'c -> string = "v4l2_get_format"
+
 let destruct t =
   if t.started then v4l2_stop t.t'c;
   v4l2_done t.t'c
@@ -72,8 +76,12 @@ let get_frame t =
       | true ->
 	  v4l2_get_frame t.t'c
   in
+  let format = v4l2_get_format t.t'c in
     (object
        method raw = string_of_bigarray raw
-       method rgb = string_of_bigarray (v4l2_decode_mjpeg raw)
+       method rgb = 
+	 match format with
+	 | "MJPG" -> string_of_bigarray (v4l2_decode_mjpeg raw)
+	 | "YUYV" -> string_of_bigarray (v4l2_decode_yuv422 raw)
+	 | x -> failwith ("invalid format " ^ x)
      end)
-
