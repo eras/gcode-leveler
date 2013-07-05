@@ -42,6 +42,15 @@ let project1st f (a, b) = (f a, b)
 
 let project2nd f (a, b) = (a, f b)
 
+let extra_features (x, y) = 
+  [|x ** 2.0; y ** 2.0; x ** 3.0; y ** 3.0|]
+  (* [||] *)
+
+let features (x, y) =
+  Array.concat [[|x; y|]; extra_features (x, y)]
+
+let num_features = 6
+
 let incr_wrap max x =
   incr x;
   if !x >= max then
@@ -623,7 +632,7 @@ let query (surface, kernel) rgb24 =
     debug "point: (%f, %f)\n%!" x y;
     let z_offset =
       Optimize.linreg_hypo
-	(kernel.Optimize.lr_normalize [|x; y|])
+	(kernel.Optimize.lr_normalize (features (x, y)))
 	kernel.Optimize.lr_theta
     in
     Printf.printf "z-offset: %f\n" z_offset;
@@ -649,10 +658,9 @@ let learn_angle (offsets : (z_offset * offset) list) =
       (Array.make (num_features + 1) 0.0)
       training_data
 
-let learn_offset ?(extra_features=[||]) (samples : (z_offset * point) list) =
-  let num_features = 2 in
+let learn_offset (samples : (z_offset * point) list) =
   let samples = Array.of_list samples in
-  let training_data = Array.map (fun (z_offset, (x, y)) -> ([|x; y|], z_offset)) samples in
+  let training_data = Array.map (fun (z_offset, (x, y)) -> (features (x, y), z_offset)) samples in
     Optimize.linreg
       ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001
       0.001
@@ -660,7 +668,6 @@ let learn_offset ?(extra_features=[||]) (samples : (z_offset * point) list) =
       training_data
 
 let env_of_images display_surface samples =
-  (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
   let samples_points = 
     List.filter_map (
       fun (rgb24, z_offset) -> 
