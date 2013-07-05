@@ -740,6 +740,10 @@ let auto_calibrate surface cnc video dims max_deviation steps =
     Cnc.wait cnc Cnc.motors_off;
     env_of_images surface !samples
 
+let enable_laser = Cnc.set_port 9 255
+
+let disable_laser = Cnc.set_port 9 0
+
 let scan _ =
   (* let clearance_x = 40.0 in *)
   (* let clearance_y = 30.0 in *)
@@ -755,6 +759,11 @@ let scan _ =
     (* Cnc.ignore cnc (Cnc.home [`X;`Y]); *)
     (* Cnc.ignore cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]); *)
     Cnc.wait cnc Cnc.motors_off;
+    Cnc.wait cnc (Cnc.set_power true);
+    Cnc.wait cnc enable_laser;
+    Unix.sleep 1;
+    Cnc.wait cnc (Cnc.home [`Z]);
+    Cnc.wait cnc (Cnc.move [`Z 20.0]);
     let (x, y, z) = Cnc.wait cnc Cnc.where in
       Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
       ( try
@@ -781,6 +790,7 @@ let scan _ =
 	with exn ->
 	  Printf.printf "exception: %s\nbacktrace: %s\n%!" (Printexc.to_string exn) (Printexc.get_backtrace ()) );
       Cnc.wait cnc (Cnc.move [`X x; `Y y; `Z z]);
+      Cnc.wait cnc disable_laser;
       Cnc.wait cnc Cnc.motors_off
 	(* Cnc.move cnc [`X 10.0; `Y 10.0]; *)
 	(* Unix.sleep 1 *)
