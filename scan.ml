@@ -508,6 +508,11 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
       for yc = 0 to y_steps - 1 do
 	let odd = xc mod 2 = 0 in
 	let x = x0 +. (w /. float (x_steps - 1) *. float xc) in
+	let yc' = 
+	  if odd
+	  then yc
+	  else y_steps - yc - 1
+	in
 	let y =
 	  let distance = h /. float (y_steps - 1) *. float yc in
 	  if odd
@@ -518,8 +523,8 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
 	  let frame = long_exposure video in
-	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
-	    results.(yc).(xc) <- Some (apply frame)
+	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc') frame;
+	    results.(yc').(xc) <- Some (apply frame)
       done
     done;
     Array.init y_steps
