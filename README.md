@@ -32,3 +32,11 @@ And now you're ready to print! Note that this is development quality
 software and I'm not responsible if the codes command your printer to
 sink deeply inside the printed object and break your printer in the
 process. You get to keep all the parts, though.
+
+# Testing out the image detection #
+
+	% ./scan.native -scan
+	
+Doing the calibration with existing images:
+
+	 % ./scan.native -sample ./+0.00.png=0 -sample ./\+0.10.png=0.1 -query test.png
