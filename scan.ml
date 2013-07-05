@@ -22,7 +22,7 @@ type angle = float
 
 type offset = float
 
-type angle_offset = (angle * offset)
+type point = (float * float)
 
 type vector = (float * float)
 
@@ -232,16 +232,6 @@ let pixels_along_vector image ((_, n) as span) =
     );
     pxs
 
-let edge_vectors image_dims = 
-  let (w, h) = image_dims in
-  let (w, h) = (float w, float h) in
-    [
-      (vector (1.0, 0.0),		vector (w -. 2.0, 0.0));
-      (vector (w -. 1.0, 1.0),		vector (w -. 1.0, h -. 2.0));
-      (vector (w -. 1.0, h -. 1.0),	vector (1.0, h -. 1.0));
-      (vector (0.0, h -. 1.0),		vector (0.0, 1.0))
-    ]
-
 let rgb24_of_file filename = 
   match Images.load filename [] with
     | Images.Rgb24 x -> x
@@ -254,7 +244,7 @@ let rgb24_of_string (width, height) string =
       Info.([Info_Depth 24; Info_ColorModel RGB])
       (Array.init height (fun y -> String.sub string (y * bytes_per_line) bytes_per_line))
 
-let gray8_of_rgb24 rgb24 =
+let index8_of_rgb24 f rgb24 =
   let (h, w) = Rgb24.(rgb24.height, rgb24.width) in
   let g = Index8.create w h in
   let buf = String.create w in
@@ -262,13 +252,53 @@ let gray8_of_rgb24 rgb24 =
       let src = Rgb24.get_scanline rgb24 y in
 	for x = 0 to w - 1 do
 	  let o = Char.code in
-	  let (r, g, b) = (o src.[x * 3], o src.[x * 3 + 1], o src.[x * 3 + 2]) in
-	  let g = int_of_float (float r *. 0.2989 +. float g *. 0.5870 +. float b *. 0.1140) in
+	  let rgb = (o src.[x * 3], o src.[x * 3 + 1], o src.[x * 3 + 2]) in
+	  let g = f rgb in
 	    buf.[x] <- Char.chr g
 	done;
 	Index8.set_scanline g y buf
     done;
     g
+
+let gray8_of_rgb24 (r, g, b) = int_of_float (float r *. 0.2989 +. float g *. 0.5870 +. float b *. 0.1140) 
+
+let min3 a b c = min (min a b) c
+
+let max3 a b c = max (max a b) c
+
+let mod_float_positive f x =
+  let res = mod_float f x in
+  let res = if res < 0.0 then x +. res else res in
+  res
+
+let h_of_rgb (r, g, b) =
+  let m' = max3 r g b in
+  let m = min3 r g b in
+  let c = m' -. m in
+  let h' =
+    if m' = m then None
+    else if m' = r then Some (mod_float_positive ((g -. b) /. c) 6.0) 
+    else if m' = g then Some ((b -. r) /. c +. 2.0)
+    else if m' = b then Some ((r -. g) /. c +. 4.0)
+    else None
+  in
+  h'
+
+(* assumes a, b < mod' *)
+let mod_distance mod' a b =
+  let (a, b) = (min a b, max a b) in
+  let d1 = b -. a in
+  let d2 = a +. (mod' -. b) in
+  min d1 d2
+
+let rgb_hue_distance a =
+  let h1 = h_of_rgb a in
+  fun b -> 
+    let h2 = h_of_rgb b in
+    match h1, h2 with
+    | None, None -> 0.0
+    | Some h1, Some h2 -> mod_distance 6.0 h1 h2 /. 6.0
+    | _ -> 1.0
 
 let fun_of_gray8 gray8 = 
   let (h, w) = Index8.(gray8.height, gray8.width) in
@@ -276,6 +306,14 @@ let fun_of_gray8 gray8 =
       if x < 0 || x >= w || y < 0 || y >= h
       then 0.0
       else float (Index8.get gray8 x (h - 1 -y)) /. 255.0
+
+let f3_of_i3 (r, g, b) = let f x = float_of_int x /. 255.0 in (f r, f g, f b)
+
+let filter_color base_color =
+  let distance = rgb_hue_distance (f3_of_i3 base_color) in
+  fun threshold color ->
+    if distance (f3_of_i3 color) < threshold then gray8_of_rgb24 color
+    else 0
 
 let surface_of_rgb24 rgb24 =
   let (w, h) = Rgb24.(rgb24.width, rgb24.height) in
@@ -462,172 +500,90 @@ let optimize_angle_offset report image dims (angle, offset) =
 let string_of_span (((x1, y1), (x2, y2)), len) =
   Printf.sprintf "(((%f, %f), (%f, %f)), %d)" x1 y1 x2 y2 len
 
-let edge_points image_dims image =
-  let edges = edge_vectors image_dims in
-  let edge_pxs = List.map (fun ab -> pixels_along_vector image (ab, ab_length ab)) edges in
-  let last = List.nth edge_pxs (List.length edge_pxs - 1) in
-  let first = List.nth edge_pxs 0 in
-  let spans = 
-    List.rev (
-      snd (
-	BatList.fold_left
-	  (fun (offset, offsets) (ab, pxs) ->
-	    let span = (ab, ab_length ab) in
-	    (offset + Array.length pxs, (((offset, offset + Array.length pxs - 1), span)::offsets))
-	  )
-	  (Array.length last, [])
-	  (List.combine edges edge_pxs)
-      )
-    )
-  in
-  let edge_pxs_single = Array.concat edge_pxs in
-  let edge_loop_pxs = Array.concat [last; edge_pxs_single; first] in
-  let avg = average edge_pxs_single in
-  let pxs = convolution_1d_cyclic (Array.make 70 (1.0 /. 70.0)) edge_loop_pxs in
-  let ofs0 = Array.length first in
-  let ofs1 = Array.length edge_loop_pxs - Array.length last - 1 in
-  let maximas = local_maximas ~limit:(fun x -> x >= avg) pxs ofs0 ofs1 10 in
-    debug "%d maximas: %s\n" 
-      (List.length maximas)
-      (String.concat "," (List.map string_of_int maximas));
-    List.map (
-      fun ((ofs0, ofs1), span) ->
-	let ms =
-	  List.filter
-	    (fun x -> x >= ofs0 && x <= ofs1)
-	    maximas
-	in
-	  debug "New edge %d-%d %s\n" ofs0 ofs1 (string_of_span span);
-	  List.map (fun ms -> 
-		      debug "ms %d -> %d\n" ms (ms - ofs0);
-		      nth_step span (ms - ofs0)
-		   ) ms
-    ) 
-      spans
 
-let compress_consecutive_lines aos =
-  compress_consecutive
-    (fun (a'angle, a'offset) (b'angle, b'offset) ->
-       abs_float (a'angle -. b'angle) < 0.01 &&
-	 abs_float (a'offset -. b'offset) < 0.5
+(** [find_image_regions condition (width, height) image] finds
+    consecutive regions satisfying [condition (image x y)], where x
+    ranges 0..width-1 and y 0..height-1. *)
+let find_image_regions condition (w, h) image =
+  let visited = Array.make (w * h) None in
+  let index x y = x + y * w in
+  let region_id = ref 0 in
+  let regions = Hashtbl.create 10 in
+  let rec visit ?id x y =
+    if x < 0 || y < 0 || x >= w || y >= h 
+      || visited.(index x y) <> None
+      || not (condition (image (x, y)))
+    then ()
+    else begin
+      let id = 
+	match id with
+	| None -> 
+	  let id = !region_id in
+	  incr region_id;
+	  id
+	| Some id -> id
+      in
+      let list = 
+	try Hashtbl.find regions id
+	with Not_found -> 
+	  let l = ref [] in
+	  Hashtbl.add regions id l;
+	  l
+      in
+      list := (x, y)::!list;
+      visited.(index x y) <- Some id;
+      visit ~id (x - 1) y;
+      visit ~id (x + 1) y;
+      visit ~id x (y - 1);
+      visit ~id x (y + 1);
+    end
+  in
+  for y = 0 to h - 1 do
+    for x = 0 to w - 1 do
+      visit x y;
+    done
+  done;
+  Hashtbl.fold
+    (fun _region points regions ->
+      let points = !points in
+      let n_points = List.length points in
+      let (accum_x, accum_y) =
+	List.fold_left
+	  ~f:(fun (x1, y1) (x2, y2) -> (x1 + x2, y1 + y2))
+	  ~init:(0, 0)
+	  points in
+      let center = (float accum_x /. float n_points,
+		    float accum_y /. float n_points) in
+      (sqrt (float n_points) /. pi, center)::regions
     )
-    (fun (a'angle, a'offset) (b'angle, b'offset) ->
-       ((a'angle +. b'angle) /. 2.0,
-	(a'offset +. b'offset) /. 2.0))
-    (List.sort compare aos)
+    regions
+    []
 
 let analyze surface rgb24 =
-  let image = (fun_of_gray8 -| gray8_of_rgb24) rgb24 in
   let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
-  let image'low = part 0.5 (array_of_image image_dims image) in
-  let image' = 
+  let image_gray = (fun_of_gray8 -| index8_of_rgb24 gray8_of_rgb24) rgb24 in
+  let image'low = part 0.5 (array_of_image image_dims image_gray) in
+  let image_filtered = 
     let filter () =
-      let img = image in
-      let img = clamp_image 0.5 0.95 image_dims img in
+      let img = (fun_of_gray8 -| index8_of_rgb24 (filter_color (255, 71, 0) 0.05)) rgb24 in
+      let img = clamp_image 0.999 1.00 image_dims img in
       let img = convolution_2d (gaussian 0.7 0.7 15) image_dims img in
+      let img = clamp_image 0.9999 1.00 image_dims img in
 	img
     in
       timing "filter" filter ()
   in
-  let points = edge_points image_dims image in
-  let image_surface = surface_of_gray_fn image_dims image' in
-  let points_flat = List.concat points in 
-  let point_pairs = pairwise points in
+  let image_surface = surface_of_gray_fn image_dims image_filtered in
   let map_to_surface (x, y) = (int_of_float x, h - int_of_float y - 1) in
-  (* let point_pairs = [List.nth point_pairs 10] in *)
-  let point_pairs_good =
-    List.filter
-      (fun ab ->
-	 let pxs = pixels_along_vector image (ab, ab_length ab) in
-	 let pxs = convolution_1d_cyclic (Array.make 40 (1.0 /. 40.0)) pxs in
-	 let avg = average pxs in
-	 let min = minimum pxs in
-	 let max = maximum pxs in
-	 let threshold =  0.9 *. average [|pxs.(0); pxs.(Array.length pxs - 1)|] in
-	   debug "%f %f %f\n%!" threshold min max;
-	   (* avg > 0.4 && min > 0.3 *)
-	   avg > threshold
-      )
-      point_pairs
-  in
-  (* let point_pairs_good = *)
-  (*   point_pairs_good |> *)
-  (* 	List.map *)
-  (* 	(fun ab -> *)
-  (* 	   let pxs = pixels_along_vector image (ab, ab_length ab) in *)
-  (* 	     (average pxs, ab) *)
-  (* 	) |> List.sort compare |> List.map snd *)
-  (* in *)
-  (* let point_pairs_good = List.take 4 point_pairs_good in *)
-  let angle_offsets = List.map (angle_offset_of_line image_dims) point_pairs_good in
-    List.iter 
-      (fun at ->
-	 let (x, y) = map_to_surface at in
-	   ignore (Sdlgfx.filledCircleRGBA image_surface (Sdlvideo.rect x y 0 0) 10 (0xff, 0xff, 0xff) 0xff)
-      )
-      points_flat;
-    Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
-    Sdlvideo.update_rect surface;
-    Printf.printf "Optimizing\n%!";
-    let report erase color step (angle, offset) = 
-      !erase ();
-      let (a, b) = line_of_angle_offset (w, h) (angle, offset) in
-      let (x1, y1) = map_to_surface a in
-      let (x2, y2) = map_to_surface b in
-	ignore (Sdlgfx.lineRGBA surface
-		  (Sdlvideo.rect x1 y1 0 0)
-		  (Sdlvideo.rect x2 y2 0 0)
-		  color 0xff);
-	erase := (fun () -> 
-		    ignore (Sdlgfx.lineRGBA surface
-			      (Sdlvideo.rect x1 y1 0 0)
-			      (Sdlvideo.rect x2 y2 0 0)
-			      (0x00, 0x00, 0x00) 0xff));
-	Sdlvideo.update_rect surface
-    in
-    let _no_report _ _ = () in
-    let optimized =
-      timing "optimize angles"
-	(BatList.filter_map
-	   (fun ao ->
-	      let erase = ref (fun () -> ()) in
-	      let r = report erase (0x80, 0xff, 0x80) in
-	      (* let r = no_report in *)
-	      let ao' = timing "optimize_angle" (optimize_angle_offset r image' image_dims) ao in
-		debug "%f,%f -> %f,%f\n" (fst ao /. pi *. 180.0) (snd ao) (fst ao' /. pi *. 180.0) (snd ao');
-		Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
-		let ab = line_of_angle_offset (w, h) ao' in
-		let pxs = pixels_along_vector image (ab, ab_length ab) in
-		  if part 0.10 pxs < image'low 
-		  then None
-		  else (
-		    report erase (0x80, 0xff, 0x80) 0 ao';
-		    Some ao'
-		  )
-	   ))
-	angle_offsets
-    in
-    let optimized = compress_consecutive_lines optimized in
-      Printf.printf "Done optimizing\n%!";
-      Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
-      List.iter
-	(fun ao ->
-	   let line (a, b) color =
-	     let (x1, y1) = map_to_surface a in
-	     let (x2, y2) = map_to_surface b in
-	       ignore (Sdlgfx.lineRGBA surface
-			 (Sdlvideo.rect x1 y1 0 0)
-			 (Sdlvideo.rect x2 y2 0 0)
-			 color 0xff)
-	   in
-	   let (a'o, b'o) = line_of_angle_offset image_dims ao in
-	     Printf.printf "%f,%f\n" (fst ao /. pi *. 180.0) (snd ao);
-	     (* line (a, b) (0xff, 0xff, 0xff); *)
-	     line (a'o, b'o) (0x80, 0xff, 0x80);
-	)
-	optimized;
-      Sdlvideo.update_rect surface;
-      optimized
+  (* Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) (); *)
+  Sdlvideo.blit_surface ~dst:surface ~src:image_surface ();
+  Sdlvideo.update_rect surface;
+  let regions = find_image_regions (fun x -> x > 0.1) image_dims image_filtered in
+  let regions = List.fast_sort ~cmp:(fun (size1, _) (size2, _) -> compare size1 size2) regions in
+  Printf.printf "%d regions\n%!" (List.length regions);
+  match regions with
+  | [] -> None
+  | (_, center)::_ -> Some center
 
 let parse_sample_ofs str =
   try
@@ -651,58 +607,25 @@ let similar_angle a b = abs_float (a -. b) < (10.0 /. 180.0 *. pi)
 let offsets_of_angle data base_angle =
   let similar_angle_offset base_angle (angle, _offset) = similar_angle base_angle angle in
     List.filter_map
-      (fun (z_offset, aos) ->
-	 match List.Exceptionless.find (similar_angle_offset base_angle) aos with
+      (fun (z_offset, point) ->
+	 match List.Exceptionless.find (similar_angle_offset base_angle) point with
 	   | None -> None
 	   | Some (_, offset) -> Some (z_offset, offset))
       data
 
-let analyze_data (data : (z_offset * angle_offset list) list) =
-  let angles =
-    compress_consecutive
-      similar_angle
-      (fun a b -> (a +. b) /. 2.0)
-      (BatList.sort compare **>
-	 List.map fst (List.concat (List.map snd data)))
-  in
-  let angle_zofsofs = List.map (fun angle -> (angle, offsets_of_angle data angle)) angles in
-    Printf.printf "training data\n";
-    List.iter
-      (fun (angle, offsets) ->
-	 Printf.printf "angle: %f\n" (angle /. pi *. 180.0);
-	 List.iter (fun (z_offset, offset) -> Printf.printf "  z-offset: %f offset: %f\n" z_offset offset) offsets
-      )
-      angle_zofsofs;
-    angle_zofsofs
-
-(* angles: -2.81137104215 0.334435358196 2.18057844162 2.80557972733 3.05623971742 *)
-(* aos: (-2.807649,118.332092) (0.334435,-118.207293) (2.176905,28.918486) (2.807629,48.072728) (3.059995,82.298368) *)
-(* offsets: 118.332091728 -118.207292594 28.9184862267 48.072727735 82.2983682201 *)
-
 let deg_of_rad rad = rad /. pi *. 180.0
 
-let query (surface, kernels) rgb24 =
-  let aos = analyze surface rgb24 in
-  let _ = debug "aos: %s\n%!" (String.concat " " (List.map (fun (angle, offset) -> Printf.sprintf "(%f,%f)" angle offset) aos)) in
-  let z_offsets =
-    List.filter_map
-      (fun (angle, kernel) ->
-	 Printf.printf "angle: %f\n%!" (deg_of_rad angle);
-	 let offsets = Array.of_list (List.filter_map (fun (angle', offset) ->
-							    if similar_angle angle angle'
-							    then Some offset
-							    else None) aos) in
-	 let _ = Printf.printf "offsets: %s\n%!" (String.concat " " (List.map string_of_float (Array.to_list offsets))) in
-	   if Array.length offsets > 0
-	   then Some (Optimize.linreg_hypo
-			(kernel.Optimize.lr_normalize [|Array.fold_left min offsets.(0) offsets|])
-			kernel.Optimize.lr_theta)
-	   else None
-      )
-      kernels
-  in
-  let z_offset = Utils.average_list z_offsets in
-    Printf.printf "z-offsets: %s\n" (String.concat " " (List.map string_of_float z_offsets));
+let query (surface, kernel) rgb24 =
+  let point = analyze surface rgb24 in
+  match point with
+  | None -> failwith "Cannot find point, cannot query"
+  | Some ((x, y) as point) ->
+    debug "point: (%f, %f)\n%!" x y;
+    let z_offset =
+      Optimize.linreg_hypo
+	(kernel.Optimize.lr_normalize [|x; y|])
+	kernel.Optimize.lr_theta
+    in
     Printf.printf "z-offset: %f\n" z_offset;
     z_offset
 
@@ -726,18 +649,33 @@ let learn_angle (offsets : (z_offset * offset) list) =
       (Array.make (num_features + 1) 0.0)
       training_data
 
-let env_of_images surface samples =
-  let angle_offsets = analyze_data (List.map (fun (data, offset) -> (offset, analyze surface (Lazy.force data))) samples) in
-    (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
-  let kernels = List.map (project2nd learn_angle) angle_offsets in
-  let env = (surface, kernels) in
-    List.iter
-      (fun (angle, { Optimize.lr_theta = theta }) ->
-	 Printf.printf "angle %f theta:" (angle /. pi *. 180.0);
-	 Array.iter (Printf.printf " %f") theta;
-	 Printf.printf "\n";
-      ) kernels;
-    env
+let learn_offset ?(extra_features=[||]) (samples : (z_offset * point) list) =
+  let num_features = 2 in
+  let samples = Array.of_list samples in
+  let training_data = Array.map (fun (z_offset, (x, y)) -> ([|x; y|], z_offset)) samples in
+    Optimize.linreg
+      ~max_steps:50000 ~min_steps:10000 ~epsilon:0.00000000001
+      0.001
+      (Array.make (num_features + 1) 0.0)
+      training_data
+
+let env_of_images display_surface samples =
+  (* let extra_features = [|(fun x -> x ** 2.0); (fun x -> x ** 3.0)|] in *)
+  let samples_points = 
+    List.filter_map (
+      fun (rgb24, z_offset) -> 
+	let point = analyze display_surface (Lazy.force rgb24) in
+	match point with
+	| None -> None
+	| Some point -> Some ((z_offset : z_offset), point)
+    ) samples in
+  let kernel = learn_offset samples_points in
+  let env = (display_surface, kernel) in
+  let { Optimize.lr_theta = theta } = kernel in
+  Printf.printf "theta: ";
+  Array.iter (Printf.printf " %f") theta;
+  Printf.printf "\n";
+  env
 
 let int_array_of_string str =
   Array.init (String.length str) (fun c -> int_of_char str.[c])
