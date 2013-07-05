@@ -261,7 +261,7 @@ let motors_off =
 let synchronize =
   send "M400" unit_response
 
-let power state =
+let set_power state =
   send (if state then "M80" else "M81") unit_response
 
 let async t (request : 'a request) (callback : 'a -> unit) =
