@@ -430,7 +430,7 @@ let deg_of_rad rad = rad /. pi *. 180.0
 let query (surface, kernel) rgb24 =
   let point = analyze surface rgb24 in
   match point with
-  | None -> failwith "Cannot find point, cannot query"
+  | None -> None
   | Some ((x, y) as _point) ->
     debug "point: (%f, %f)\n%!" x y;
     let z_offset =
@@ -439,7 +439,7 @@ let query (surface, kernel) rgb24 =
 	kernel.Optimize.lr_theta
     in
     Printf.printf "z-offset: %f\n" z_offset;
-    z_offset
+    Some z_offset
 
 let map_features xs fs =
   let mapping row =
@@ -591,9 +591,9 @@ let scan _ =
 	    for y = Array.length table - 1 downto 0 do
 	      for x = 0 to Array.length table.(y) - 1 do
 		let v = table.(y).(x) in
-		  match classify_float v with
-		    | FP_subnormal | FP_zero | FP_normal -> Printf.printf "% .3f " v
-		    | FP_infinite | FP_nan -> Printf.printf "      "
+		  match Option.map classify_float v with
+		    | Some (FP_subnormal | FP_zero | FP_normal) -> Printf.printf "% .3f " (Option.get v)
+		    | Some (FP_infinite | FP_nan) | None -> Printf.printf "      "
 	      done;
 	      Printf.printf "\n"
 	    done
