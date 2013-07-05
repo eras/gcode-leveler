@@ -288,6 +288,7 @@ v4l2_open(value name, value width, value height)
 {
   CAMLparam3(name, width, height);
   const char* msg = NULL;
+  char msg_buf[1024];
 
   int fd = open(String_val(name), O_RDWR);
   struct t* t = NULL;
@@ -366,7 +367,13 @@ v4l2_open(value name, value width, value height)
   if (fmt.fmt.pix.width != Int_val(width) ||
       fmt.fmt.pix.height != Int_val(height) ||
       fmt.fmt.pix.pixelformat != V4L2_PIX_FMT_MJPEG) {
-    msg = "v4l2_open: could not set desired size or pixel format";
+    snprintf(msg_buf, sizeof(msg_buf),
+             "v4l2_open: could not set desired size or pixel format. Actual pixel format: %c%c%c%c",
+             (fmt.fmt.pix.pixelformat >> 0) & 0xff,
+             (fmt.fmt.pix.pixelformat >> 8) & 0xff,
+             (fmt.fmt.pix.pixelformat >> 16) & 0xff,
+             (fmt.fmt.pix.pixelformat >> 24) & 0xff);
+    msg = msg_buf;
     goto cleanup;
   }
 
