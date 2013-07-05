@@ -7,7 +7,7 @@ let main () =
     for i = 0 to 9 do
       let frame = get_frame v in
       let raw = frame#raw in
-      let decoded = frame#decode in
+      let decoded = frame#rgb in
 	Printf.printf "%d %d\n%!" (String.length raw) (String.length decoded);
 	output_file (Printf.sprintf "%04d.jpg" i) raw;
 	output_file (Printf.sprintf "%04d.raw" i) decoded;

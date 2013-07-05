@@ -3,4 +3,4 @@ type config = {
   height	: int;
 }
 
-type frame = < raw : string; decode : string >
+type frame = < raw : string; rgb : string >

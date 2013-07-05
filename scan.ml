@@ -756,7 +756,7 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
-	  let frame = (V4l2.get_frame video)#decode in
+	  let frame = (V4l2.get_frame video)#rgb in
 	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
 	    results.(yc).(xc) <- Some (apply frame)
       done
@@ -776,7 +776,8 @@ let auto_calibrate surface cnc video dims max_deviation steps =
 	Cnc.wait cnc (Cnc.move [`Z (z_offset +. max_deviation)]);
 	Cnc.wait cnc Cnc.synchronize;
 	wait_camera video;
-	let frame = (V4l2.get_frame video)#decode in
+	let frame = (V4l2.get_frame video)#rgb in
+	Printf.printf "Received %d bytes for a frame\n%!" (String.length frame);
 	let rgb24 = (rgb24_of_string dims frame) in
 	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
 	  Sdlvideo.update_rect surface;

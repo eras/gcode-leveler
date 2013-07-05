@@ -74,6 +74,6 @@ let get_frame t =
   in
     (object
        method raw = string_of_bigarray raw
-       method decode = string_of_bigarray (v4l2_decode_mjpeg raw)
+       method rgb = string_of_bigarray (v4l2_decode_mjpeg raw)
      end)
 
