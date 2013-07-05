@@ -739,6 +739,19 @@ let env_of_images surface samples =
       ) kernels;
     env
 
+let int_array_of_string str =
+  Array.init (String.length str) (fun c -> int_of_char str.[c])
+
+let long_exposure video =
+  let n_frames = 10 in
+  let frames = Array.init n_frames (fun _ -> (V4l2.get_frame video)#rgb) in
+  let frame_size = String.length frames.(0) in
+  let accum = Array.make frame_size 0 in
+  let add_ints a b = Array.mapi (fun idx x -> x + b.(idx)) a in
+  let accum = Array.fold_left add_ints accum (Array.map int_array_of_string frames) in
+  let final = Array.map (fun x -> char_of_int (x / n_frames)) accum in
+  String.implode (Array.to_list final)
+
 let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
   let w = x1 -. x0 in
   let h = y1 -. y0 in
@@ -756,7 +769,7 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
-	  let frame = (V4l2.get_frame video)#rgb in
+	  let frame = long_exposure video in
 	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc) frame;
 	    results.(yc).(xc) <- Some (apply frame)
       done
@@ -776,7 +789,7 @@ let auto_calibrate surface cnc video dims max_deviation steps =
 	Cnc.wait cnc (Cnc.move [`Z (z_offset +. max_deviation)]);
 	Cnc.wait cnc Cnc.synchronize;
 	wait_camera video;
-	let frame = (V4l2.get_frame video)#rgb in
+	let frame = long_exposure video in
 	Printf.printf "Received %d bytes for a frame\n%!" (String.length frame);
 	let rgb24 = (rgb24_of_string dims frame) in
 	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
