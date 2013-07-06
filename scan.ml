@@ -74,16 +74,39 @@ let fold_along_vector f x0 ((v0, v1), n) =
     done;
     !x
 
+let roi_region roi rgb24 =
+  match roi with
+  | None -> 
+    let (h, w) = Rgb24.(rgb24.height, rgb24.width) in
+    (0, 0, w, h)
+  | Some roi -> roi
+
+let region_wh (x0, y0, x1, y1) = (x1 - x0, y1 - y0)
+
+let region_size region = 
+  let (w, h) = region_wh region in
+  w * h
+
 let get image (x, y) = image (int_of_float (x +. 0.5), int_of_float (y +. 0.5))
 
-let part n xs =
+let get_pixels ~roi image =
+  let (x0, y0, _, _) = roi in
+  let (w, h) = region_wh roi in
+  Array.init (w * h) 
+    (fun i ->
+      let x = x0 + i mod w in
+      let y = y0 + i / w in
+      image (x, y)
+    )
+
+let part ~roi fractile image =
   let xs' = 
-    let x = Array.copy xs in
+    let x = get_pixels ~roi image in
       Array.sort compare x;
       x
   in
-  let len = Array.length xs in
-  let n' = min (len - 1) (int_of_float (float len *. n)) in
+  let len = region_size roi in
+  let n' = min (len - 1) (int_of_float (float len *. fractile)) in
     xs'.(n')
 
 let convolution_1d_cyclic kernel xs = 
@@ -124,39 +147,42 @@ let string_of_kernel (size, m) =
     done;
     Buffer.contents b
 
-let image_of_array (w, h) bm =
+let image_of_array ?roi (w, h) bm =
+  let (x0, y0, x1, y1) = match roi with
+    | None -> (0, 0, w, h)
+    | Some roi -> roi
+  in
   fun (x, y) ->
-    if x >= 0 && y >= 0 && x < w && y < h
-    then bm.(y * w + x)
+    if x >= x0 && y >= y0 && x < x1 && y < y1
+    then bm.((y - y0) * w + (x - x0))
     else 0.0
 
-let convolution_2d (kernel_size, kernel) (w, h) image =
+let convolution_2d ~roi (kernel_size, kernel) image =
+  let (x0, y0, x1, y1) as roi = roi in
+  let (w, h) = region_wh roi in
   assert (kernel_size mod 2 = 1);
   let dst = Array.make (w * h) 0.0 in
-    for x = 0 to w - 1 do
-      for y = 0 to h - 1 do
+    for x = x0 to x1 - 1 do
+      for y = y0 to y1 - 1 do
 	let s = ref 0.0 in
 	  for xc = -kernel_size / 2 to kernel_size / 2 do
 	    for yc = -kernel_size / 2 to kernel_size / 2 do
 	      let x' = x + xc in
 	      let y' = y + yc in
-	      let v = if x' >= 0 && x' < w && y' >= 0 && y < h then image (x', y') else 0.0 in
+	      let v = if x' >= x0 && x' < x1 && y' >= y0 && y < y1 then image (x', y') else 0.0 in
 	      let k = kernel.((xc + kernel_size / 2) + (yc + kernel_size / 2) * kernel_size) in
 		s := !s +. v *. k
 	    done
 	  done;
-	  dst.(y * w + x) <- !s
+	  dst.((y - y0) * w + (x - x0)) <- !s
       done
     done;
-    image_of_array (w, h) dst
+    image_of_array ~roi (w, h) dst
 
-let array_of_image (w, h) image = 
-  Array.init (w * h) (fun c -> image (c mod w, c / w))
-
-let clamp_image lower higher (w, h) image =
-  let src = array_of_image (w, h) image in
-  let limit_min = part lower src in
-  let limit_max = part higher src in
+let clamp_image ~roi lower higher image =
+  let (w, h) = region_wh roi in
+  let limit_min = part ~roi lower image in
+  let limit_max = part ~roi higher image in
   let do_clamp x = 
     match () with
       | _ when x > limit_max -> x
@@ -164,7 +190,7 @@ let clamp_image lower higher (w, h) image =
       | _ -> x
   in
   let dst = Array.init (w * h) (fun c -> do_clamp (image (c mod w, c / w))) in
-    image_of_array (w, h) dst
+    image_of_array ~roi (w, h) dst
 
 let pixels_along_vector image ((_, n) as span) = 
   let pxs = Array.make n 0.0 in
@@ -191,13 +217,14 @@ let rgb24_of_string (width, height) string =
       Info.([Info_Depth 24; Info_ColorModel RGB])
       (Array.init height (fun y -> String.sub string (y * bytes_per_line) bytes_per_line))
 
-let index8_of_rgb24 f rgb24 =
-  let (h, w) = Rgb24.(rgb24.height, rgb24.width) in
+let index8_of_rgb24 ?roi f rgb24 =
+  let (x0, y0, x1, y1) as roi = roi_region roi rgb24 in
+  let (w, h) = region_wh roi in
   let g = Index8.create w h in
   let buf = String.create w in
-    for y = 0 to h - 1 do
+    for y = y0 to y1 - 1 do
       let src = Rgb24.get_scanline rgb24 y in
-	for x = 0 to w - 1 do
+	for x = x0 to x1 - 1 do
 	  let o = Char.code in
 	  let rgb = (o src.[x * 3], o src.[x * 3 + 1], o src.[x * 3 + 2]) in
 	  let g = f rgb in
@@ -374,14 +401,15 @@ let find_image_regions condition (w, h) image =
     regions
     []
 
-let analyze surface rgb24 =
-  let (w, h) as image_dims = Rgb24.(rgb24.width, rgb24.height) in
+let find_laser_dot ?roi surface rgb24 =
+  let roi = roi_region roi rgb24 in
+  let (w, h) as image_dims = region_wh roi in 
   let image_filtered = 
     let filter () =
       let img = (fun_of_gray8 -| index8_of_rgb24 (filter_color (255, 71, 0) 0.05)) rgb24 in
-      let img = clamp_image 0.999 1.00 image_dims img in
-      let img = convolution_2d (gaussian 0.7 0.7 15) image_dims img in
-      let img = clamp_image 0.9999 1.00 image_dims img in
+      let img = clamp_image ~roi 0.999 1.00 img in
+      let img = convolution_2d ~roi (gaussian 0.7 0.7 15) img in
+      let img = clamp_image ~roi 0.9999 1.00 img in
 	img
     in
       timing "filter" filter ()
@@ -427,8 +455,8 @@ let offsets_of_angle data base_angle =
 
 let deg_of_rad rad = rad /. pi *. 180.0
 
-let query (surface, kernel) rgb24 =
-  let point = analyze surface rgb24 in
+let find_image_z_offset (surface, kernel) rgb24 =
+  let point = find_laser_dot surface rgb24 in
   match point with
   | None -> None
   | Some ((x, y) as _point) ->
@@ -474,7 +502,7 @@ let env_of_images display_surface samples =
   let samples_points = 
     List.filter_map (
       fun (rgb24, z_offset) -> 
-	let point = analyze display_surface (Lazy.force rgb24) in
+	let point = find_laser_dot display_surface (Lazy.force rgb24) in
 	match point with
 	| None -> None
 	| Some point -> Some ((z_offset : z_offset), point)
@@ -600,7 +628,7 @@ let scan _ =
 	  let env = auto_calibrate surface cnc video dims 0.5 9 in
 	  let table =
 	    auto_acquire cnc video
-	      (fun frame -> query env (rgb24_of_string dims frame))
+	      (fun frame -> find_image_z_offset env (rgb24_of_string dims frame))
 	      ((clearance_x, clearance_y), (bed_width -. clearance_x, bed_height -. clearance_y))
 	      (5, 5)
 	  in
@@ -632,7 +660,7 @@ let analysis (queries, samples) =
     let env = env_of_images surface (List.map (fun (filename, offset) -> (lazy (rgb24_of_file filename), offset)) samples) in
       List.iter (fun filename ->
 		   Printf.printf "Quering offset from %s\n%!" filename;
-		   ignore (query env (rgb24_of_file filename))) (List.rev queries)
+		   ignore (find_image_z_offset env (rgb24_of_file filename))) (List.rev queries)
 
 let main () =
   let samples = ref [] in
