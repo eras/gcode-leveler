@@ -490,13 +490,25 @@ let env_of_images display_surface samples =
 let int_array_of_string str =
   Array.init (String.length str) (fun c -> int_of_char str.[c])
 
+let array_sum xs = Array.fold_left ( + ) 0 xs
+
+let array_remove xs i = Array.concat [Array.left xs i; Array.right xs (Array.length xs - i - 1)]
+
+let list_remove xs i = List.take i xs @ List.drop (i + 1) xs 
+
 let long_exposure video =
-  let n_frames = 10 in
-  let frames = Array.init n_frames (fun _ -> (V4l2.get_frame video)#rgb) in
-  let frame_size = String.length frames.(0) in
+  let n_frames = 5 in
+  let frames = List.init n_frames (fun _ -> (V4l2.get_frame video)#rgb) in
+  let frames = List.map int_array_of_string frames in
+  let frame_brightness = List.mapi (fun i x -> (array_sum x, i)) frames in
+  let frame_brightness = List.sort compare frame_brightness in
+  let darkest_idx = snd (List.nth frame_brightness 0) in
+  let brightest_idx = snd (List.nth frame_brightness (List.length frame_brightness - 1)) in
+  let frames = (flip list_remove darkest_idx % flip list_remove brightest_idx) frames in
+  let frame_size = Array.length (List.nth frames 0) in
   let accum = Array.make frame_size 0 in
   let add_ints a b = Array.mapi (fun idx x -> x + b.(idx)) a in
-  let accum = Array.fold_left add_ints accum (Array.map int_array_of_string frames) in
+  let accum = List.fold_left ~f:add_ints ~init:accum frames in
   let final = Array.map (fun x -> char_of_int (x / n_frames)) accum in
   String.implode (Array.to_list final)
 
