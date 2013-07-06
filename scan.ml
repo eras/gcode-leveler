@@ -595,7 +595,7 @@ let scan _ =
       Printf.printf "X:%f Y:%f Z:%f\n%!" x y z;
       ( try
 	  Cnc.wait cnc (Cnc.set_step_speed 5000.0);
-	  Cnc.wait cnc (Cnc.set_acceleration [`X 50.0; `Y 50.0]);
+	  Cnc.wait cnc (Cnc.set_acceleration [`X 500.0; `Y 500.0]);
 	  Cnc.wait cnc (Cnc.move [`X (bed_width /. 2.0); `Y (bed_height /. 2.0)]);
 	  let env = auto_calibrate surface cnc video dims 0.5 9 in
 	  let table =
