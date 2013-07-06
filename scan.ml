@@ -534,7 +534,7 @@ let auto_acquire cnc video apply ((x0, y0), (x1, y1)) (x_steps, y_steps) =
 	  Cnc.wait cnc (Cnc.move [`X x; `Y y]);
 	  Cnc.wait cnc Cnc.synchronize;
 	  wait_camera video;
-	  let frame = long_exposure video in
+	  let frame = timing "long_exposure" long_exposure video in
 	    output_file (Printf.sprintf "image-%d-%d.raw" xc yc') frame;
 	    results.(yc').(xc) <- Some (apply frame)
       done
