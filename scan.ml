@@ -548,7 +548,7 @@ let auto_calibrate surface cnc video dims max_deviation steps =
 	  Sdlvideo.blit_surface ~dst:surface ~src:(surface_of_rgb24 rgb24) ();
 	  Sdlvideo.update_rect surface;
 	  output_file (Printf.sprintf "%+.2f.raw" z_offset) frame;
-	  samples := (lazy rgb24, z_offset)::!samples;
+	  samples := (lazy rgb24, ~-. z_offset)::!samples;
     done;
     Cnc.wait cnc (Cnc.move [`Z max_deviation]);
     Cnc.wait cnc (Cnc.set_position [`Z z]);
