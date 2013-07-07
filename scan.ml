@@ -16,6 +16,8 @@ struct
   include Vector.Ops
 end
 
+type image = (int * int) -> float
+
 type z_offset = float
 
 type angle = float
