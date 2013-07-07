@@ -181,8 +181,21 @@ let convolution_2d ~roi (kernel_size, kernel) image =
     done;
     image_of_array ~roi (w, h) dst
 
-let clamp_image ~roi lower higher image =
+let cache_image ~roi image =
+  let (x0, y0, _, _) = roi in
   let (w, h) = region_wh roi in
+  let copy = Array.init (w * h) (fun c -> image (c mod w + x0, c / w + y0)) in
+  image_of_array ~roi (w, h) copy
+
+let map_image f (image : image) =
+  fun at ->
+    f (image at)
+
+let map_image_xy f (image : image) =
+  fun at ->
+    f (image at) at
+      
+let clamp_image ~roi lower higher (image : image) =
   let limit_min = part ~roi lower image in
   let limit_max = part ~roi higher image in
   let do_clamp x = 
