@@ -204,8 +204,77 @@ let clamp_image ~roi lower higher (image : image) =
       | _ when x < limit_min -> 0.0
       | _ -> x
   in
-  let dst = Array.init (w * h) (fun c -> do_clamp (image (c mod w, c / w))) in
-    image_of_array ~roi (w, h) dst
+  map_image do_clamp image
+
+module MultiSet = functor(T : Set.OrderedType) -> struct
+  type key = T.t
+  module M = Map.Make(T)
+  type t = int M.t
+  let add x t = 
+    try 
+      let ref_count = M.find x t + 1 in
+      M.add x ref_count t
+    with Not_found ->
+      M.add x 1 t
+  let remove x t =
+    try 
+      let ref_count = M.find x t - 1 in
+      if ref_count = 0 then
+	M.remove x t
+      else
+	M.add x ref_count t
+    with Not_found ->
+      t
+  let empty = M.empty
+  let min t = fst (M.min_binding t)
+  let max t = fst (M.max_binding t)
+end
+
+module FloatMultiSet = MultiSet(struct type t = float let compare = compare end)
+
+let adaptive_balance ~roi size image =
+  let (x0, y0, x1, y1) = roi in
+  let (w, h) = region_wh roi in
+  let min_table_horiz = Array.make (w * h) 0.0 in
+  let max_table_horiz = Array.make (w * h) 0.0 in
+  let min_table_vert = Array.make (w * h) 0.0 in
+  let max_table_vert = Array.make (w * h) 0.0 in
+  let index x y = (x - x0) + (y - y0) * w in
+  for x = x0 to x1 - 1 do
+    let values = ref FloatMultiSet.empty in
+    for y = y0 to y0 + size / 2 - 1 do
+      values := FloatMultiSet.add (image (x, y)) !values
+    done;
+    for y = y0 to y1 - 1 do
+      if y + size / 2 < y1 then
+	values := FloatMultiSet.add (image (x, y + size / 2)) !values;
+      if y - size / 2 >= y0 then
+	values := FloatMultiSet.remove (image (x, y - size / 2)) !values;
+      min_table_vert.(index x y) <- FloatMultiSet.min !values;
+      max_table_vert.(index x y) <- FloatMultiSet.max !values;
+    done
+  done;
+  for y = y0 to y1 - 1 do
+    let values = ref FloatMultiSet.empty in
+    for x = x0 to x0 + size / 2 - 1 do
+      values := FloatMultiSet.add (image (x, y)) !values
+    done;
+    for x = x0 to x1 - 1 do
+      if x + size / 2 < y1 then
+	values := FloatMultiSet.add (image (x + size / 2, y)) !values;
+      if x - size / 2 >= x0 then
+	values := FloatMultiSet.remove (image (x - size / 2, y)) !values;
+      min_table_horiz.(index x y) <- FloatMultiSet.min !values;
+      max_table_horiz.(index x y) <- FloatMultiSet.max !values;
+    done
+  done;
+  fun (x, y) ->
+    if x >= x0 && y >= y0 && x < x1 && x < y1 then
+      let min' = min (min_table_horiz.(index x y)) (min_table_vert.(index x y)) in
+      let max' = max (max_table_horiz.(index x y)) (max_table_vert.(index x y)) in
+      (image (x, y) -. min') /. (max' -. min')
+    else
+      0.0
 
 let pixels_along_vector image ((_, n) as span) = 
   let pxs = Array.make n 0.0 in
