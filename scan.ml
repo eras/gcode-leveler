@@ -394,14 +394,15 @@ let surface_of_rgb24 rgb24 =
       Sdlvideo.unlock s;
       s
 
-let surface_of_fn (w, h) fn =
+let surface_of_fn ~roi (w, h) fn =
   let module A1 = Bigarray.Array1 in
+  let (x0, y0, x1, y1) = roi in
   let s = Sdlvideo.create_RGB_surface [] ~w ~h ~rmask:0xff0000l ~gmask:0x00ff00l ~bmask:0x0000ffl ~amask:0l ~bpp:24 in
     Sdlvideo.lock s;
     let pixels = Sdlvideo.pixel_data s in
     let pitch = Sdlvideo.((surface_info s).pitch) in
-      for y = 0 to h - 1 do
-	for x = 0 to w - 1 do
+      for y = y0 to y1 - 1 do
+	for x = x0 to x1 - 1 do
 	  let (r, g, b) = fn (x, y) in
 	  let ofs = (x * 3 + y * pitch) in
 	    A1.set pixels (ofs + 2) r;
@@ -412,10 +413,12 @@ let surface_of_fn (w, h) fn =
       Sdlvideo.unlock s;
       s
 
-let surface_of_gray_fn (w, h) fn =
-  surface_of_fn (w, h) (fun (x, y) -> 
-			  let c = int_of_float ((max 0.0 (min 1.0 (fn (x, h - y - 1)))) *. 255.0) in
-			    (c, c, c))
+let surface_of_gray_fn ~roi (w, h) fn =
+  surface_of_fn ~roi (w, h) (
+    fun (x, y) -> 
+      let c = int_of_float ((max 0.0 (min 1.0 (fn (x, h - y - 1)))) *. 255.0) in
+      (c, c, c)
+  )
 
 let rec wait_exit () =
   match Sdlevent.wait_event () with
@@ -430,13 +433,15 @@ let rec map_scan_list f xs =
 (** [find_image_regions condition (width, height) image] finds
     consecutive regions satisfying [condition (image x y)], where x
     ranges 0..width-1 and y 0..height-1. *)
-let find_image_regions condition (w, h) image =
+let find_image_regions ~roi condition image =
+  let (x0, y0, x1, y1) = roi in
+  let (w, h) = region_wh roi in
   let visited = Array.make (w * h) None in
-  let index x y = x + y * w in
+  let index x y = (x - x0) + (y - y0) * w in
   let region_id = ref 0 in
   let regions = Hashtbl.create 10 in
   let rec visit ?id x y =
-    if x < 0 || y < 0 || x >= w || y >= h 
+    if x < x0 || y < y0 || x >= x1 || y >= y1 
       || visited.(index x y) <> None
       || not (condition (image (x, y)))
     then ()
@@ -464,8 +469,8 @@ let find_image_regions condition (w, h) image =
       visit ~id x (y + 1);
     end
   in
-  for y = 0 to h - 1 do
-    for x = 0 to w - 1 do
+  for y = y0 to y1 - 1 do
+    for x = x0 to x1 - 1 do
       visit x y;
     done
   done;
