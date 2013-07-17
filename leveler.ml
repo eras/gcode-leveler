@@ -2,6 +2,8 @@ open BatPervasives
 
 module Lnoexn = BatList.Exceptionless
 
+let ( **> ) a b = a b
+
 type g1 =
     { x : float option;
       y : float option;
