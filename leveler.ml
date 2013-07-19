@@ -20,10 +20,28 @@ type input =
   | G92 of g1			     (* set values *)
   | Other of string
 
+let string_of_gfloat f =
+  let str = Printf.sprintf "%.5f" f in
+  let last_non_zero =
+    let rec find_last_nonzero ofs = 
+      if ofs < 0
+      then None
+      else if str.[ofs] <> '0'
+      then Some ofs
+      else find_last_nonzero (ofs - 1)
+    in
+    find_last_nonzero (String.length str - 1)
+  in
+  ( match last_non_zero with
+  | None -> str
+  | Some ofs when str.[ofs] = '.' -> String.sub str 0 (ofs + 2)
+  | Some ofs -> String.sub str 0 (ofs + 1)
+  )
+
 let string_of_token = function
   | Lexer.Eof -> ""
   | Lexer.Entry (register, Lexer.Int value) -> Printf.sprintf "%c%d" register value
-  | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%.3f" register value
+  | Lexer.Entry (register, Lexer.Float value) -> Printf.sprintf "%c%s" register (string_of_gfloat value)
   | Lexer.Comment str -> str
   | Lexer.Eol -> "\n"
 
@@ -124,8 +142,6 @@ let parse_gcode () =
 		process (Lexer.Eol::accu)
   in
     BatEnum.from (fun () -> loop [])
-
-let string_of_gfloat f = Printf.sprintf "%.3f" f
 
 let string_of_input ?(mode=`Absolute) ?(previous) = 
   let (x', y', z', e') = 
