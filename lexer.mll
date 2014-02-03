@@ -18,9 +18,14 @@ rule token = parse
 	       if Pcre.pmatch ~pat:"\\." value
 	       then Float (float_of_string value)
 	       else Int (int_of_string value)) }
+  | ('(' [^ ')' '\n']* ')') as comment { Comment comment }
   | ([' ' '\t'] * ';' [^ '\n']*) as comment { Comment comment }
-  | [' ' '\t'] *
+  | [' ' '\t' '\r'] *
       { token lexbuf }
   | '\n' { Eol }
   | eof { Eof }
-  | _ { assert false }
+  | _ { 
+    let open Lexing in
+    Printf.eprintf "Failed to parse at line %d, column %d\n" lexbuf.lex_start_p.pos_lnum lexbuf.lex_start_p.pos_cnum;
+    assert false 
+  }
