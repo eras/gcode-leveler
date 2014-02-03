@@ -4,7 +4,7 @@ module Lnoexn = BatList.Exceptionless
 
 let ( **> ) a b = a b
 
-type g1 =
+type goto =
     { x : float option;
       y : float option;
       z : float option;
@@ -14,10 +14,11 @@ type g1 =
 type rest = string
 
 type input = 
-  | G1 of g1			     (* go to point *)
+  | G0 of goto			     (* go to point *)
+  | G1 of goto			     (* go to point *)
   | G90abs of rest		     (* switch to absolute movement *)
   | G91rel of rest		     (* switch to relative movement *)
-  | G92 of g1			     (* set values *)
+  | G92 of goto			     (* set values *)
   | Other of string
 
 let string_of_gfloat f =
@@ -73,6 +74,7 @@ let parse_gcode () =
 	| Some (Lexer.Entry (_, Lexer.Int value)) -> Some (float_of_int value)
 	| Some _ -> assert false
     in
+    let g0 = List.mem (Lexer.Entry ('G', Lexer.Int 0)) accu in
     let g1 = List.mem (Lexer.Entry ('G', Lexer.Int 1)) accu in
     let g90 = List.mem (Lexer.Entry ('G', Lexer.Int 90)) accu in
     let g91 = List.mem (Lexer.Entry ('G', Lexer.Int 91)) accu in
@@ -110,6 +112,10 @@ let parse_gcode () =
 	| _ when g91 ->
 	    mode := `Relative;
 	    G91rel (Lazy.force rest)
+	| _ when g0 ->
+	    let (x, y, z, e) = new_at in
+	      update_positions ();
+	      (G0 { x; y; z; e; rest = Lazy.force rest })
 	| _ when g1 ->
 	    let (x, y, z, e) = new_at in
 	      update_positions ();
@@ -146,7 +152,7 @@ let parse_gcode () =
 let string_of_input ?(mode=`Absolute) ?(previous) = 
   let (x', y', z', e') = 
     match mode, previous with
-      | `Absolute, Some (G1 { x; y; z; e; rest }) -> (x, y, z, e)
+      | `Absolute, Some (G0 { x; y; z; e; rest } | G1 { x; y; z; e; rest }) -> (x, y, z, e)
       | `Absolute, Some (G92 { x; y; z; e; rest }) -> (x, y, z, e)
       | (`Absolute | `Relative), Some (G90abs _ | G91rel _ | Other _) 
       | (`Absolute | `Relative), None
@@ -168,6 +174,7 @@ let string_of_input ?(mode=`Absolute) ?(previous) =
       label ^ f "X" x x' ^ f "Y" y y' ^ f "Z" z z' ^ f "E" e e' ^ " " ^ rest
   in
   function
+  | G0 { x; y; z; e; rest } -> coord_cmd "G0" x y z e rest
   | G1 { x; y; z; e; rest } -> coord_cmd "G1" x y z e rest
   | G92 { x; y; z; e; rest } -> coord_cmd "G92" x y z e rest
   | G90abs rest -> "G90 " ^ rest
@@ -190,7 +197,7 @@ let midway_opt a b =
     | Some a, Some b -> Some (midway a b)
     | _ -> None
 
-let midway_g1 a b =
+let midway_goto a b =
   let x = midway_opt a.x b.x in
   let y = midway_opt a.y b.y in
   let z = midway_opt a.z b.z in
@@ -200,7 +207,7 @@ let midway_g1 a b =
 let rec interpolate_absolute threshold g1_0 g1_2 =
   if BatOption.default false (BatOption.map ((<) threshold) (distance2_opt (g1_0.x, g1_0.y) (g1_2.x, g1_2.y))) 
   then 
-    let g1_1 = midway_g1 g1_0 g1_2 in
+    let g1_1 = midway_goto g1_0 g1_2 in
     let g1_2 = { g1_2 with rest = "\n" } in
       interpolate_absolute threshold g1_0 g1_1 @ interpolate_absolute threshold g1_1 g1_2
   else (
@@ -211,7 +218,7 @@ let rec interpolate_relative threshold g1_1 =
   let origo = { x = Some 0.0; y = Some 0.0; z = Some 0.0; e = Some 0.0; rest = "\n" } in
     if BatOption.default false (BatOption.map ((<) threshold) (distance2_opt (origo.x, origo.y) (g1_1.x, g1_1.y)))
     then
-      let g1_0 = midway_g1 origo g1_1 in
+      let g1_0 = midway_goto origo g1_1 in
       let g1_1 = { g1_0 with rest = "\n" } in
 	interpolate_relative threshold g1_0 @ interpolate_relative threshold g1_1
     else (
@@ -226,7 +233,7 @@ let interpolate threshold data =
       | None -> raise BatEnum.No_more_elements
       | Some ((Other _) as code) ->
 	  ([code], (mode, g1_0))
-      | Some ((G1 g1_2)) ->
+      | Some ((G0 g1_2 | G1 g1_2)) ->
 	  let map_ofs = match mode with
 	    | `Absolute -> coalesce2
 	    | `Relative ->
@@ -277,11 +284,13 @@ let project_z f (_x, _y, z) = f z
 
 let map_z f code =
     match code with
-      | G1 ({ x = Some x; y = Some y; z = Some z } as g1) ->
-	  G1 { g1 with z = Some (f (x, y, z)) }
-      | G92 ({ x = Some x; y = Some y; z = Some z } as g1) ->
-	  G92 { g1 with z = Some (f (x, y, z)) }
-      | G1 _ | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
+      | G0 ({ x = Some x; y = Some y; z = Some z } as goto) ->
+	  G0 { goto with z = Some (f (x, y, z)) }
+      | G1 ({ x = Some x; y = Some y; z = Some z } as goto) ->
+	  G1 { goto with z = Some (f (x, y, z)) }
+      | G92 ({ x = Some x; y = Some y; z = Some z } as goto) ->
+	  G92 { goto with z = Some (f (x, y, z)) }
+      | G0 _ | G1 _ | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
       | G90abs _ | G91rel _ | Other _ -> code
 
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
@@ -321,7 +330,7 @@ let transform { step_size; mapping } =
 	     | Some x -> 
 		 let mode', prev' =
 		   match x with
-		     | G1 _ | G92 _ -> mode, Some x
+		     | G0 _ | G1 _ | G92 _ -> mode, Some x
 		     | G90abs _ -> `Absolute, prev
 		     | G91rel _ -> `Relative, prev
 		     | Other _ -> mode, prev
