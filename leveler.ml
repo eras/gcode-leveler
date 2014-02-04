@@ -63,7 +63,7 @@ let interpolate threshold data =
       | None -> raise BatEnum.No_more_elements
       | Some ((Other _) as code) ->
 	  ([code], (mode, g1_0))
-      | Some ((G0 g1_2 | G1 g1_2)) ->
+      | Some (Move ((G0 | G1) as move, g1_2)) ->
 	  let map_ofs = match mode with
 	    | `Absolute -> coalesce2
 	    | `Relative ->
@@ -73,7 +73,7 @@ let interpolate threshold data =
 		    | None, Some x -> Some x
 		    | Some old, Some new' -> Some (new' +. old)
 	  in
-	  (List.map (fun x -> G1 x) 
+	  (List.map (fun x -> Move (move, x)) 
 	     (match mode with
 		| `Absolute ->
 		    interpolate_absolute
@@ -114,13 +114,11 @@ let project_z f (_x, _y, z) = f z
 
 let map_z f code =
     match code with
-      | G0 ({ x = Some x; y = Some y; z = Some z } as goto) ->
-	  G0 { goto with z = Some (f (x, y, z)) }
-      | G1 ({ x = Some x; y = Some y; z = Some z } as goto) ->
-	  G1 { goto with z = Some (f (x, y, z)) }
+      | Move ((G0 | G1) as move, (({ x = Some x; y = Some y; z = Some z } as goto))) ->
+	  Move (move, { goto with z = Some (f (x, y, z)) })
       | G92 ({ x = Some x; y = Some y; z = Some z } as goto) ->
 	  G92 { goto with z = Some (f (x, y, z)) }
-      | G0 _ | G1 _ | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
+      | Move ((G0 | G1), _) | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
       | G90abs _ | G91rel _ | Other _ -> code
 
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
@@ -160,7 +158,7 @@ let transform { step_size; mapping } =
 	     | Some x -> 
 		 let mode', prev' =
 		   match x with
-		     | G0 _ | G1 _ | G92 _ -> mode, Some x
+		     | Move ((G0 | G1), _) | G92 _ -> mode, Some x
 		     | G90abs _ -> `Absolute, prev
 		     | G91rel _ -> `Relative, prev
 		     | Other _ -> mode, prev
@@ -175,8 +173,8 @@ let show_table { x_dim; y_dim; mapping } =
   (y_dim, ~-.10.0) --. 1.0 |> BatEnum.iter **> fun y ->
     begin 
       (1.0, 10.0) --. x_dim |> BatEnum.iter **> fun x ->
-	match mapping (G1 { x = Some x; y = Some y; z = Some 0.0; e = None; rest = "" }) with
-	  | G1 { z = Some z } ->
+	match mapping (Move (G1, { x = Some x; y = Some y; z = Some 0.0; e = None; rest = "" })) with
+	  | Move (G1, { z = Some z }) ->
 	      Printf.printf " % .03f" z
 	  | _ -> assert false
     end;
