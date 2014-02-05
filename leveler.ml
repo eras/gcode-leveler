@@ -4,6 +4,8 @@ open GcodeParser
 
 module Lnoexn = BatList.Exceptionless
 
+let ( **> ) a b = a b
+
 let coalesce2 a b =
   match a with
     | None -> b
@@ -146,7 +148,7 @@ type env = {
 }
 
 let transform { step_size; mapping } =
-  let data = parse_gcode () in
+  let data = parse_gcode (Lexing.from_channel Pervasives.stdin) in
   let data = BatEnum.map mapping data in
   let data = interpolate step_size data in
   let data = 
