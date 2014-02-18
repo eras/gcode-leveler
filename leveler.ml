@@ -120,6 +120,8 @@ let map_z f code =
 	  Move (move, { goto with z = Some (f (x, y, z)) })
       | G92 ({ x = Some x; y = Some y; z = Some z } as goto) ->
 	  G92 { goto with z = Some (f (x, y, z)) }
+      | Move ((G0 | G1), { x = None; y = None; z = None; e = None }) ->
+	code
       | Move ((G0 | G1), _) | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
       | G90abs _ | G91rel _ | Other _ -> code
 
@@ -132,6 +134,8 @@ let map_xy f code =
   | G92 ({ x = Some x; y = Some y } as goto) ->
     let xy = f (V2.v x y) in
     G92 { goto with x = Some (V2.x xy); y = Some (V2.y xy) }
+  | Move ((G0 | G1), { x = None; y = None; z = None; e = None }) ->
+    code
   | Move ((G0 | G1), _) | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
   | G90abs _ | G91rel _ | Other _ -> code
 
