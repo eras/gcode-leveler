@@ -123,6 +123,18 @@ let map_z f code =
       | Move ((G0 | G1), _) | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
       | G90abs _ | G91rel _ | Other _ -> code
 
+let map_xy f code =
+  let open Gg in
+  match code with
+  | Move ((G0 | G1) as move, (({ x = Some x; y = Some y } as goto))) ->
+    let xy = f (V2.v x y) in
+    Move (move, { goto with x = Some (V2.x xy); y = Some (V2.y xy) })
+  | G92 ({ x = Some x; y = Some y } as goto) ->
+    let xy = f (V2.v x y) in
+    G92 { goto with x = Some (V2.x xy); y = Some (V2.y xy) }
+  | Move ((G0 | G1), _) | G92 _ -> failwith "Cannot perform mapping, not all X, Y and Z are known"
+  | G90abs _ | G91rel _ | Other _ -> code
+
 let interpolate1 (x_min, x_max) (y_min, y_max) x =
   (x -. x_min) /. (x_max -. x_min) *. (y_max -. y_min) +. y_min
 
@@ -190,6 +202,14 @@ let main () =
   let y_dim = ref 199 in
   let step_size = ref 50.0 in
   let set_mode mode' = Arg.Unit (fun () -> mode := mode') in
+  let matrix = ref Gg.M3.id in
+  let set_matrix m str =
+    match List.map float_of_string @@ Pcre.split ~pat:"," str with
+    | e0::e1::e2::e3::e4::e5::[] ->
+      m := Gg.M3.(v e0 e1 e2 e3 e4 e5 0.0 0.0 1.0)
+    | _ ->
+      failwith "Invalid matrix. Needs 6 numbers, separated by commas"
+  in
   let add_point str = 
     match Pcre.split ~pat:"," str with
       | [x'str; y'str; z'str] ->
@@ -204,10 +224,17 @@ let main () =
 	       ("-x", Arg.Set_int x_dim, "Set area X size");
 	       ("-y", Arg.Set_int y_dim, "Set area Y size");
 	       ("-table", set_mode show_table, "Show table of transformation at scale 1/10");
+	       ("-matrix", Arg.String (set_matrix matrix), "Set transformation matrix (homogeneous row-major comma-separated 3x3 affine matrix without the last row)");
 	      ] (fun arg -> Printf.ksprintf failwith "Invalid argument: %s\n%!" arg) "G-code leveler";
     let offset = !offset in
     let points = Array.of_list !points in
-    let mapping = (map_z (map_by_d ~offset ~points)) in
+    let surface_mapping = map_z (map_by_d ~offset ~points) in
+    let matrix_mapping = map_xy (fun xy -> Gg.P2.tr !matrix xy) in
+    let mapping input = 
+      let input = matrix_mapping input in
+      let input = surface_mapping input in
+      input
+    in
     let x_dim, y_dim = float !x_dim, float !y_dim in
     let step_size = !step_size in
       !mode { step_size; mapping; x_dim; y_dim }

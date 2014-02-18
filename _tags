@@ -1,6 +1,6 @@
 <*>: debug, thread
 
-<*>: package(pcre), package(batteries), package(ocamlgraph), dtypes, debug, package(gcode)
+<*>: package(pcre), package(batteries), package(ocamlgraph), dtypes, debug, package(gcode), package(gg)
 
 <surface.*>: package(glMLite), package(glMLite.glut), package(glMLite.vbo), package(glMLite.glu)
 
