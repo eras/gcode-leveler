@@ -1,0 +1,3 @@
+[submodule "OCamlGcode"]
+	path = OCamlGcode
+	url = https://github.com/eras/OCamlGcode.git
